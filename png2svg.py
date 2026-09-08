@@ -49,6 +49,9 @@ DEFAULTS = dict(
     backend="auto",      # "auto" | "potrace" (the C binary) | "python" (potracer)
     workers=0,           # 0 = one per core
     max_grid=20_000_000, # cap on pixels of the trace grid; scale drops to fit
+    grad_gain=0.3,       # min drop in a region's mean max-channel abs error a
+                         # linear gradient must buy over its flat fill to be used;
+                         # None or 0 disables gradients
 )
 
 NEIGHBOURS = ((1, 0), (-1, 0), (0, 1), (0, -1))
@@ -330,6 +333,79 @@ def islands(lab, pal, inside, max_area, max_de, purity=0.9):
     return out
 
 
+_LUM = np.array([0.2126, 0.7152, 0.0722])
+
+
+def _gradients(lab, src_rgb, pal, w, h, s, gain):
+    """Fit colour = c0 + cx*x/w + cy*y/h per channel over each region's source
+    pixels, and keep the plane where it beats the flat fill by more than `gain`
+    (mean max-channel abs error) on at least 64 pixels.
+
+    `src_rgb` must already be the source blended over white (compare() does the
+    same before scoring): a soft alpha shading reads as an RGB gradient only
+    once it is composited, and a flat opaque fill is what a path actually renders.
+
+    Returns the <linearGradient> defs and, per accepted colour index, the
+    gradient id and the fitted region's mean colour (for the returned palette).
+    """
+    lab_s = lab[::s, ::s]                        # back to source resolution
+    defs, fills = [], {}
+    for i in range(len(pal)):
+        own = lab_s == i
+        core = own.copy()
+        for dy, dx in NEIGHBOURS:                # drop pixels within 1px of a boundary
+            core &= np.roll(own, (dy, dx), (0, 1))
+        # a small, mostly-boundary region (a thin stroke, a tiny icon glyph) is
+        # dominated by source antialiasing right where a plane is judged, so its
+        # measured gain is unreliable; give it 4x the floor to average that out
+        if core.sum() < 64 or own.sum() < 256:
+            continue
+        ys, xs = np.nonzero(core)
+        X = np.stack([np.ones(len(xs)), xs / w, ys / h], 1)
+        Y = src_rgb[core].astype(float)
+        # a region with little spread on one axis makes x/w, y/h collinear; a loose
+        # rcond lets lstsq answer with huge, near-cancelling (and so unstable to
+        # extrapolate) coefficients, so drop that ill-conditioned direction instead
+        coef, *_ = np.linalg.lstsq(X, Y, rcond=1e-2)   # rows: c0, cx, cy; cols: R,G,B
+        # judge the gain over the *whole* region, not just its fitted interior: a
+        # thin or intricate shape is mostly boundary, and a plane that only reads
+        # well on its calm interior can still lose badly once it covers the rest
+        oys, oxs = np.nonzero(own)
+        oX = np.stack([np.ones(len(oxs)), oxs / w, oys / h], 1)
+        oY = src_rgb[own].astype(float)
+        ofit = oX @ coef
+        err_flat = np.abs(oY - pal[i]).max(1).mean()
+        err_fit = np.abs(oY - ofit).max(1).mean()
+        if err_flat - err_fit <= gain:
+            continue
+        gx, gy = coef[1:] @ _LUM                 # luminance-weighted (cx, cy)
+        n = (gx * gx + gy * gy) ** 0.5
+        if n < 1e-6:
+            continue
+        dx, dy = gx / n, gy / n
+        # bounding box of the *fitted* pixels only: a stop beyond what the plane was
+        # fit on would extrapolate, and a thin or curved region can extrapolate wildly
+        bx0, bx1, by0, by1 = xs.min(), xs.max(), ys.min(), ys.max()
+        ccx, ccy = (bx0 + bx1) / 2, (by0 + by1) / 2   # box centre: the line's fixed point
+        r = max(abs((cx_ - ccx) * dx + (cy_ - ccy) * dy)
+                for cx_, cy_ in ((bx0, by0), (bx1, by0), (bx0, by1), (bx1, by1)))
+        p1, p2 = (ccx - r * dx, ccy - r * dy), (ccx + r * dx, ccy + r * dy)
+        # a non-convex/thin region's bbox corners can still fall outside its own
+        # pixels (an L-shape, a diagonal stroke), so the "fitted" corner above can
+        # still extrapolate; clamp each stop to the colour the region actually has
+        lo, hi = Y.min(0), Y.max(0)
+        ends = [np.clip(coef[0] + coef[1] * (p[0] / w) + coef[2] * (p[1] / h), lo, hi)
+                .round().astype(int) for p in (p1, p2)]
+        gid = "g%d" % len(defs)
+        defs.append('<linearGradient id="%s" gradientUnits="userSpaceOnUse" '
+                    'x1="%.0f" y1="%.0f" x2="%.0f" y2="%.0f">'   # a px of drift is invisible
+                    '<stop offset="0" stop-color="#%02X%02X%02X"/>'
+                    '<stop offset="1" stop-color="#%02X%02X%02X"/></linearGradient>'
+                    % (gid, p1[0], p1[1], p2[0], p2[1], *ends[0], *ends[1]))
+        fills[i] = (gid, tuple(oY.mean(0).round().astype(int)))
+    return defs, fills
+
+
 def to_path(mask, cfg):
     """Trace one layer. The C potrace runs ~50x faster than the Python port."""
     if cfg["backend"] == "potrace":
@@ -535,6 +611,12 @@ def trace(src, out, progress=None, **opts):
     lab = smooth(lab, inside, len(pal), cfg["smooth_radius"] * s, cfg["smooth_passes"], sure)
     lab = islands(lab, pal, inside, cfg["max_island"] * s * s, 2 * cfg["merge_dist"])
 
+    grad_defs, grad_fills = [], {}
+    if cfg["grad_gain"]:
+        a1o = a1[:, :, 3:4] / 255.0                 # blend over white: what a path renders as
+        blended = a1[:, :, :3] * a1o + 255 * (1 - a1o)
+        grad_defs, grad_fills = _gradients(lab, blended, pal, w, h, s, cfg["grad_gain"])
+
     core = lab >= 0                             # silhouette minus its outer rim
     for _ in range(cfg["erode"] * cfg["scale"]):
         e = core.copy()
@@ -557,12 +639,14 @@ def trace(src, out, progress=None, **opts):
     parts = []
     for i, d in zip(order, _trace_layers(masks, cfg, say)):
         if d:
-            parts.append('<path fill="#%02X%02X%02X" d="%s"/>'
-                         % (*pal[i], straighten(d, cfg["straight_tol"])))
+            fill = "url(#%s)" % grad_fills[i][0] if i in grad_fills else "#%02X%02X%02X" % tuple(pal[i])
+            parts.append('<path fill="%s" d="%s"/>' % (fill, straighten(d, cfg["straight_tol"])))
 
-    open(out, "w").write(_svg(w, h, "\n".join(parts)))
+    defs = "<defs>\n%s\n</defs>\n" % "\n".join(grad_defs) if grad_defs else ""
+    open(out, "w").write(_svg(w, h, defs + "\n".join(parts)))
     say("done")
-    return ["#%02X%02X%02X" % tuple(pal[i]) for i in order]
+    return ["#%02X%02X%02X" % (grad_fills[i][1] if i in grad_fills else tuple(pal[i]))
+            for i in order]
 
 
 # VTracer defaults, in the order its binding takes them. Order matters: see vtrace().
@@ -681,6 +765,19 @@ def demo():
     trace("_demo.png", "_demo.svg", scale=2)
     d = open("_demo.svg").read()
     assert d.count("<path") == 1 and "#C81E1E" in d, d[:200]
+    # a left-to-right ramp in one flat-merged region beats its flat fill with a gradient
+    ramp = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    for y in range(64):
+        for x in range(64):
+            ramp.putpixel((x, y), (200 + round(55 * x / 63), 0, 0, 255))
+    ramp_png = os.path.join(tempfile.gettempdir(), "_demo_ramp.png")
+    ramp_svg = os.path.join(tempfile.gettempdir(), "_demo_ramp.svg")
+    ramp.save(ramp_png)
+    trace(ramp_png, ramp_svg, scale=2, merge_dist=100)             # force one region
+    gd = open(ramp_svg).read()
+    assert "linearGradient" in gd, gd[:300]
+    r = compare(ramp_png, ramp_svg)
+    assert r["mean"] < 2, r
     n = pixel_copy("_demo.png", "_demo_exact.svg")
     assert n == 32, n                                             # 32 rows, one run each
     try:
