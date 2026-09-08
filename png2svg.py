@@ -59,9 +59,14 @@ DEFAULTS = dict(
     grad_gain=0.3,       # min drop in a region's mean max-channel abs error a
                          # linear gradient must buy over its flat fill to be used;
                          # None or 0 disables gradients
+    repair_passes=1,     # rounds of residual repair after the layers are traced;
+                         # 0 disables (and skips the render it needs)
+    repair_thr=16,       # max-channel error at which a pixel joins a repair cluster
+    repair_min=16,       # px^2: smallest error cluster worth a patch of its own
 )
 
 NEIGHBOURS = ((1, 0), (-1, 0), (0, 1), (0, -1))
+EIGHT = np.ones((3, 3), bool)
 CHUNK = 500_000
 
 
@@ -668,9 +673,149 @@ def straighten(d, tol=DEFAULTS["straight_tol"]):
     return " ".join(out)
 
 
+def _offset(d, dx, dy):
+    """Shift a path traced from a crop back to its place in the image.
+
+    Every command we emit (M, L, C) takes whole x,y pairs and Z takes none, so
+    the numbers alternate x, y all the way through the string.
+    """
+    i = [0]
+
+    def move(m):
+        v = float(m.group()) + (dx if i[0] % 2 == 0 else dy)
+        i[0] += 1
+        return ("%.1f" % v).rstrip("0").rstrip(".")
+    return re.sub(r"-?\d+\.?\d*", move, d)
+
+
 def _svg(w, h, body, extra=""):
     return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" '
             'width="%d" height="%d"%s>\n%s\n</svg>\n' % (w, h, w, h, extra, body))
+
+
+def _flat(x):
+    """RGBA -> RGB over white: what the pixel actually looks like on a page."""
+    a = x[:, :, 3:4] / 255.0
+    return x[:, :, :3] * a + 255 * (1 - a)
+
+
+def repair(src_rgba, parts, defs, pal, w, h, cfg, say):
+    """Patch what the layers got wrong: trace the largest error clusters.
+
+    The palette drops a colour that covers little of the artwork, and a vote
+    or an island merge moves a small shape into its neighbour; whatever the
+    cause, the result is a compact blob where the render is plainly the wrong
+    colour. Render the SVG as it stands, cluster the pixels that are furthest
+    off, and lay one flat path per blob on top of everything else.
+
+    Paths are not free, so a patch is kept only when the share of the total
+    error it covers beats the share of the file it costs, and the pass as a
+    whole is kept only when mean * bytes went down. Needs cairosvg and scipy;
+    without either the pass is skipped and `parts` comes back unchanged.
+
+    A patch takes a palette colour whenever its own mean is within merge_dist of
+    one. A patch colour off the palette is a colour no layer has, and tracing the
+    result again has to invent it: ten such patches on cat_mascot bought 0.08 of
+    trace mean and cost 0.36 of round-trip mean. Only a blob whose colour really
+    is absent -- one the palette dropped -- gets a fill of its own.
+    """
+    try:
+        import cairosvg
+        from scipy import ndimage
+    except ImportError:
+        say("repair needs cairosvg and scipy; skipped")
+        return parts
+    s = cfg["scale"]
+    src = _flat(src_rgba)
+    alpha = src_rgba[:, :, 3]
+    lab_pal = to_lab(pal)
+    inside = alpha >= 128                       # never paint outside the artwork
+    tmp = os.path.join(tempfile.gettempdir(), "_repair%d.svg" % os.getpid())
+    png = tmp + ".png"
+
+    def shot(ps):
+        """Write, render and score one candidate SVG. Returns (error map, bytes)."""
+        text = _svg(w, h, defs + "\n".join(ps))
+        open(tmp, "w").write(text)
+        cairosvg.svg2png(url=tmp, write_to=png, output_width=w, output_height=h)
+        got = np.array(Image.open(png).convert("RGBA")).astype(float)
+        return np.abs(src - _flat(got)).max(2), len(text)
+
+    for p in range(cfg["repair_passes"]):
+        d, size = shot(parts)
+        was = d.mean() * size                   # err_kb, up to a constant
+        hot = (d > cfg["repair_thr"]) & inside
+        # Most of the residual is a one-pixel thread along every edge: the vector
+        # boundary sits a fraction of a pixel off the source antialiasing. A patch
+        # cannot fix that -- its own edge lands in the same wrong place -- and those
+        # threads chain into one snake that spans the artwork. An opening keeps only
+        # error with a body; dilating that core back inside `hot` returns each
+        # blob's own rim without letting the threads back in.
+        core = ndimage.binary_opening(hot, EIGHT)
+        comp, k = ndimage.label(ndimage.binary_dilation(core, EIGHT) & hot, EIGHT)
+        if not k:
+            break
+        area = np.bincount(comp.ravel(), minlength=k + 1)[1:]
+        mass = np.bincount(comp.ravel(), d.ravel(), k + 1)[1:]
+        total = d.sum()
+        boxes = ndimage.find_objects(comp)
+        masks, cand = [], []
+        # by error mass, biggest first; stop once even a bare path (~60 bytes) could
+        # not earn its keep on the whole cluster -- the rest are smaller still
+        for c in np.argsort(-mass):
+            if mass[c] / total * size <= 60:
+                break
+            if area[c] < cfg["repair_min"]:
+                continue
+            sy, sx = boxes[c]
+            y0, x0 = max(sy.start - 1, 0), max(sx.start - 1, 0)
+            m = comp[y0:sy.stop + 1, x0:sx.stop + 1] == c + 1
+            px = src[y0:y0 + m.shape[0], x0:x0 + m.shape[1]][m]
+            col = px.mean(0)
+            op = alpha[y0:y0 + m.shape[0], x0:x0 + m.shape[1]][m].mean() / 255.0
+            # a soft blob: paint the colour it has under its own alpha, not over white
+            fill = col if op >= 250 / 255 else np.clip((col - 255 * (1 - op)) / op, 0, 255)
+            j = int(nearest(to_lab(fill[None]), lab_pal)[0])
+            if ((to_lab(fill) - lab_pal[j]) ** 2).sum() <= cfg["merge_dist"] ** 2:
+                fill = pal[j].astype(float)     # near enough to be the same colour
+                col = fill * op + 255 * (1 - op)
+            # what one flat colour will still be wrong by. A blob that is really one
+            # fill leaves almost nothing; a cluster over a glyph or a busy detail is
+            # black and white at once, and its mean grey is worse than what is there.
+            gain = (d[y0:y0 + m.shape[0], x0:x0 + m.shape[1]][m]
+                    - np.abs(px - col).max(1)).sum()
+            if gain / total * size <= 60:
+                continue
+            masks.append(np.repeat(np.repeat(m, s, 0), s, 1))
+            cand.append((gain, fill, op, y0, x0))
+        if not masks:
+            break
+        new = []
+        for (gain, fill, op, y0, x0), dpath in zip(
+                cand, _trace_layers(masks, cfg, lambda *_: None)):
+            if not dpath:
+                continue
+            dpath = _offset(straighten(dpath, cfg["straight_tol"]), x0, y0)
+            fo = ' fill-opacity="%.3f"' % op if op < 250 / 255 else ""
+            el = ('<path fill="#%02X%02X%02X"%s d="%s"/>'
+                  % (*fill.round().astype(int), fo, dpath))
+            if gain / total > len(el) / size:   # error it buys beats the file it costs
+                new.append(el)
+        if not new:
+            break
+        d2, size2 = shot(parts + new)
+        if d2.mean() * size2 >= was:
+            say("repair pass %d: %d patches did not pay (mean %.3f->%.3f, "
+                "bytes %d->%d); dropped" % (p + 1, len(new), d.mean(), d2.mean(),
+                                            size, size2))
+            break
+        say("repair pass %d: %d patches, mean %.3f -> %.3f, bytes %d -> %d"
+            % (p + 1, len(new), d.mean(), d2.mean(), size, size2))
+        parts = parts + new
+    for f in (tmp, png):
+        if os.path.exists(f):
+            os.remove(f)
+    return parts
 
 
 def trace(src, out, progress=None, **opts):
@@ -737,6 +882,9 @@ def trace(src, out, progress=None, **opts):
             parts.append('<path fill="%s" d="%s"/>' % (fill, straighten(d, cfg["straight_tol"])))
 
     defs = "<defs>\n%s\n</defs>\n" % "\n".join(grad_defs) if grad_defs else ""
+    if cfg["repair_passes"]:
+        say("repair residuals")
+        parts = repair(a1.astype(float), parts, defs, pal, w, h, cfg, say)
     open(out, "w").write(_svg(w, h, defs + "\n".join(parts)))
     say("done")
     return ["#%02X%02X%02X" % (grad_fills[i][1] if i in grad_fills else tuple(pal[i]))
@@ -804,8 +952,7 @@ def compare(src, svg_path):
                        os.path.basename(svg_path) + ".check.png")
     cairosvg.svg2png(url=svg_path, write_to=png, output_width=w, output_height=h)
     b = np.array(Image.open(png).convert("RGBA")).astype(float)
-    flat = lambda x: x[:, :, :3] * (x[:, :, 3:4] / 255.0) + 255 * (1 - x[:, :, 3:4] / 255.0)
-    d = np.abs(flat(a) - flat(b)).max(2)
+    d = np.abs(_flat(a) - _flat(b)).max(2)
     return dict(mean=d.mean(), max=d.max(), over40=100 * (d > 40).mean(),
                 within8=100 * (d <= 8).mean(), render=png)
 
@@ -876,6 +1023,18 @@ def demo():
     trace("_demo.png", "_demo.svg", scale=2)
     d = open("_demo.svg").read()
     assert d.count("<path") == 1 and "#C81E1E" in d, d[:200]
+    # a shape too small for the palette comes back as a repair patch
+    miss = Image.new("RGBA", (64, 64), (200, 30, 30, 255))
+    for y in range(26, 38):
+        for x in range(26, 38):
+            miss.putpixel((x, y), (30, 30, 200, 255))       # 144px = 3.5%, under min_share
+    miss_png = os.path.join(tempfile.gettempdir(), "_demo_miss.png")
+    miss_svg = os.path.join(tempfile.gettempdir(), "_demo_miss.svg")
+    miss.save(miss_png)
+    trace(miss_png, miss_svg, scale=2, min_share=0.05)
+    md = open(miss_svg).read()
+    assert md.count("<path") == 2, md[:300]
+    assert compare(miss_png, miss_svg)["mean"] < 3, compare(miss_png, miss_svg)
     # a left-to-right ramp in one flat-merged region beats its flat fill with a gradient
     ramp = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     for y in range(64):
