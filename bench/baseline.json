@@ -1,11 +1,11 @@
 {
  "cat_face.png:trace": {
-  "mean": 3.349,
-  "over40": 1.432,
-  "paths": 9,
-  "nodes": 25371,
-  "bytes": 551428,
-  "secs": 7.55
+  "mean": 3.165,
+  "over40": 0.784,
+  "paths": 15,
+  "nodes": 24442,
+  "bytes": 518607,
+  "secs": 9.76
  },
  "cat_face.png:vtrace": {
   "mean": 3.683,
@@ -13,15 +13,15 @@
   "paths": 389,
   "nodes": 5506,
   "bytes": 296685,
-  "secs": 0.19
+  "secs": 0.18
  },
  "cat_mascot.png:trace": {
-  "mean": 2.963,
-  "over40": 0.807,
-  "paths": 15,
-  "nodes": 52439,
-  "bytes": 1096925,
-  "secs": 7.94
+  "mean": 2.91,
+  "over40": 0.751,
+  "paths": 25,
+  "nodes": 79376,
+  "bytes": 1670236,
+  "secs": 12.38
  },
  "cat_mascot.png:vtrace": {
   "mean": 3.424,
@@ -29,15 +29,31 @@
   "paths": 1031,
   "nodes": 15054,
   "bytes": 754352,
-  "secs": 0.26
+  "secs": 0.27
+ },
+ "cat_sleeping.png:trace": {
+  "mean": 1.668,
+  "over40": 0.205,
+  "paths": 12,
+  "nodes": 28354,
+  "bytes": 572898,
+  "secs": 7.73
+ },
+ "cat_sleeping.png:vtrace": {
+  "mean": 3.003,
+  "over40": 1.367,
+  "paths": 704,
+  "nodes": 9622,
+  "bytes": 491439,
+  "secs": 0.22
  },
  "headphone_outline.png:trace": {
-  "mean": 1.532,
-  "over40": 0.636,
-  "paths": 6,
-  "nodes": 2653,
-  "bytes": 48116,
-  "secs": 1.82
+  "mean": 1.641,
+  "over40": 0.707,
+  "paths": 5,
+  "nodes": 1097,
+  "bytes": 21791,
+  "secs": 2.1
  },
  "headphone_outline.png:vtrace": {
   "mean": 3.347,
@@ -48,12 +64,12 @@
   "secs": 0.06
  },
  "headphones.png:trace": {
-  "mean": 1.079,
-  "over40": 0.244,
-  "paths": 5,
-  "nodes": 5017,
-  "bytes": 105664,
-  "secs": 4.72
+  "mean": 1.129,
+  "over40": 0.3,
+  "paths": 8,
+  "nodes": 11003,
+  "bytes": 224502,
+  "secs": 5.67
  },
  "headphones.png:vtrace": {
   "mean": 1.994,
@@ -64,12 +80,12 @@
   "secs": 0.17
  },
  "icon_headphones94.png:trace": {
-  "mean": 4.103,
-  "over40": 1.222,
-  "paths": 14,
-  "nodes": 1901,
-  "bytes": 31170,
-  "secs": 0.26
+  "mean": 3.838,
+  "over40": 0.86,
+  "paths": 15,
+  "nodes": 1559,
+  "bytes": 24625,
+  "secs": 0.31
  },
  "icon_headphones94.png:vtrace": {
   "mean": 26.943,
@@ -80,12 +96,12 @@
   "secs": 0.01
  },
  "icon_pen94.png:trace": {
-  "mean": 3.585,
-  "over40": 1.924,
-  "paths": 17,
-  "nodes": 1411,
-  "bytes": 24075,
-  "secs": 0.28
+  "mean": 3.708,
+  "over40": 1.641,
+  "paths": 15,
+  "nodes": 1483,
+  "bytes": 24659,
+  "secs": 0.25
  },
  "icon_pen94.png:vtrace": {
   "mean": 11.216,
@@ -96,12 +112,12 @@
   "secs": 0.01
  },
  "icon_pencil48.png:trace": {
-  "mean": 2.303,
-  "over40": 1.042,
-  "paths": 13,
-  "nodes": 345,
-  "bytes": 5700,
-  "secs": 0.2
+  "mean": 2.503,
+  "over40": 0.868,
+  "paths": 10,
+  "nodes": 226,
+  "bytes": 3945,
+  "secs": 0.26
  },
  "icon_pencil48.png:vtrace": {
   "mean": 15.833,
@@ -112,12 +128,12 @@
   "secs": 0.0
  },
  "mic_flat.png:trace": {
-  "mean": 0.741,
+  "mean": 0.747,
   "over40": 0.062,
   "paths": 4,
-  "nodes": 1523,
-  "bytes": 29194,
-  "secs": 4.15
+  "nodes": 1539,
+  "bytes": 29718,
+  "secs": 4.19
  },
  "mic_flat.png:vtrace": {
   "mean": 1.465,
@@ -128,12 +144,12 @@
   "secs": 0.09
  },
  "mic_small.png:trace": {
-  "mean": 0.399,
-  "over40": 0.134,
+  "mean": 0.409,
+  "over40": 0.139,
   "paths": 4,
-  "nodes": 1125,
-  "bytes": 24280,
-  "secs": 2.33
+  "nodes": 1096,
+  "bytes": 23459,
+  "secs": 2.63
  },
  "mic_small.png:vtrace": {
   "mean": 0.823,
@@ -144,12 +160,12 @@
   "secs": 0.07
  },
  "pencil.png:trace": {
-  "mean": 1.146,
-  "over40": 0.075,
-  "paths": 10,
-  "nodes": 2580,
-  "bytes": 57739,
-  "secs": 4.25
+  "mean": 1.106,
+  "over40": 0.104,
+  "paths": 17,
+  "nodes": 4681,
+  "bytes": 105384,
+  "secs": 5.31
  },
  "pencil.png:vtrace": {
   "mean": 1.447,
@@ -157,15 +173,15 @@
   "paths": 201,
   "nodes": 4049,
   "bytes": 207511,
-  "secs": 0.12
+  "secs": 0.11
  },
  "pencil_outline.png:trace": {
-  "mean": 1.359,
-  "over40": 0.665,
+  "mean": 1.408,
+  "over40": 0.707,
   "paths": 6,
-  "nodes": 974,
-  "bytes": 18805,
-  "secs": 1.31
+  "nodes": 934,
+  "bytes": 18121,
+  "secs": 1.74
  },
  "pencil_outline.png:vtrace": {
   "mean": 2.75,
@@ -176,12 +192,12 @@
   "secs": 0.04
  },
  "ui_toggles.png:trace": {
-  "mean": 2.467,
-  "over40": 2.269,
-  "paths": 4,
-  "nodes": 1798,
-  "bytes": 27947,
-  "secs": 0.24
+  "mean": 2.367,
+  "over40": 1.273,
+  "paths": 5,
+  "nodes": 1836,
+  "bytes": 27366,
+  "secs": 0.27
  },
  "ui_toggles.png:vtrace": {
   "mean": 7.582,

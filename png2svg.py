@@ -25,11 +25,17 @@ from PIL import Image
 
 DEFAULTS = dict(
     scale=4,             # trace grid: 4x gives quarter-pixel edge placement
-    min_share=0.01,      # drop colours below this share of the artwork
+    min_share=0.001,     # drop colours below this share of the artwork
     merge_dist=10,       # Lab distance (delta E) that still counts as one colour
+    overlap=0.5,         # share of a colour's pixels that sit as close to another
+                         # colour, above which the two are one textured colour
     smooth_passes=2,     # 3x3 majority votes over the labels
-    min_width=1.0,       # px: a band of a blended colour up to this wide is an
-                         # anti-aliasing transition, not a shape
+    min_width=2.0,       # px: a band of a blended colour up to this wide is an
+                         # edge transition, not a shape (soft edges need more)
+    edge_share=0.5,      # a colour whose pixels blend more often than this is a
+                         # transition, not a fill, and goes
+    band_tol=20,         # delta E a band pixel may sit off the line between the
+                         # two colours around it and still count as their blend
     erode=1,             # px of the outer rim that stays single-layer
     alphamax=0.5,        # potrace corner threshold: 1.0 rounds every corner,
                          # 0.5 keeps the corners of flat artwork sharp
@@ -92,12 +98,44 @@ def palette(rgb, solid, cfg):
     for i in range(len(cols)):                  # greedy by frequency, merge in Lab
         if not pal or ((lab[i] - lab[pal]) ** 2).sum(1).min() > cfg["merge_dist"] ** 2:
             pal.append(i)
-    near = nearest(lab, lab[pal])
+    pal = _merge_overlap(cols, n, lab, pal, 2 * cfg["merge_dist"], cfg["overlap"])
+    near = nearest(lab, to_lab(pal))
     share = np.bincount(near, n, len(pal)) / n.sum()
-    keep = [p for p, sh in zip(pal, share) if sh >= cfg["min_share"]]
-    if not keep:
+    keep = share >= cfg["min_share"]
+    if not keep.any():
         raise ValueError("no colour covers min_share of the image; lower it")
-    return cols[keep]
+    return pal[keep]
+
+
+def _merge_overlap(cols, n, lab, pal, max_de, ratio, margin=3.0):
+    """Join two palette entries that split one textured colour.
+
+    A grainy fill lands on two entries a little over merge_dist apart, and its
+    pixels sit about as close to one as to the other. Count, per pair, the
+    pixels within `margin` delta E of both. Two flat fills share none; one
+    texture shares most. Above `ratio` of the smaller entry, the pair becomes
+    one entry at the pixel-weighted mean colour. Repeat until no pair is left.
+    """
+    pal = cols[pal].astype(float)
+    while len(pal) > 1:
+        lp = to_lab(pal)
+        d = np.sqrt(((lab[:, None] - lp[None]) ** 2).sum(2))
+        o = np.argsort(d, axis=1)[:, :2]
+        rows = np.arange(len(d))
+        close = d[rows, o[:, 1]] - d[rows, o[:, 0]] < margin
+        m = len(pal)
+        total = np.bincount(o[:, 0], n, m)
+        both = np.bincount((o[:, 0] * m + o[:, 1])[close], n[close], m * m).reshape(m, m)
+        both = both + both.T
+        score = both / np.maximum(np.minimum(total[:, None], total[None]), 1)
+        score[np.sqrt(((lp[:, None] - lp[None]) ** 2).sum(2)) > max_de] = 0
+        np.fill_diagonal(score, 0)
+        c, e = np.unravel_index(score.argmax(), score.shape)
+        if score[c, e] < ratio:
+            break
+        mean = (pal[c] * total[c] + pal[e] * total[e]) / max(total[c] + total[e], 1)
+        pal = np.vstack([np.delete(pal, [c, e], 0), mean])
+    return pal.round().astype(int)
 
 
 def label_all(rgb, solid, inside, pal):
@@ -136,15 +174,17 @@ def _runs(lab):
     return out
 
 
-def thin(lab, rgb, inside, pal, width, tol):
-    """Relabel the anti-aliasing bands that landed on a third colour.
+def thin(lab, rgb, inside, pal, width, tol, edge_share):
+    """Relabel the edge bands that landed on a third colour.
 
-    Two flat fills that meet get a one-pixel band of blended colour between
-    them. When that blend matches a real palette colour, the band is labelled
-    as one and traces as hundreds of slivers. A pixel is a band pixel if its
-    run of equal labels is short in both directions AND its own colour sits on
-    the line between the two colours that surround it. A real thin stroke
-    fails the second test, so it survives.
+    Two fills that meet get a band of blended colour between them, one pixel
+    for anti-aliasing, several for a soft edge. When that blend matches a
+    palette colour, the band is labelled as one and traces as slivers or a
+    halo. A pixel is a band pixel if its run of equal labels is short in both
+    directions AND its own colour sits on the line (in Lab) between the two
+    colours that surround it. A real thin stroke fails the second test, so it
+    survives. A colour whose pixels are mostly band pixels only exists on
+    edges: it is a transition, not a fill, and all its pixels go.
     """
     w = int(round(width))
     cand = inside & (_runs(lab) <= w)
@@ -156,7 +196,7 @@ def thin(lab, rgb, inside, pal, width, tol):
     h, wd = lab.shape
     n = len(pal)
     count = np.zeros((len(ys), n), np.int16)      # labels seen around each candidate
-    for r in range(1, w + 2):
+    for r in range(1, w + 2, max(1, w // 3)):    # a few rings out to the band edge
         for dy, dx in ((r, 0), (-r, 0), (0, r), (0, -r), (r, r), (r, -r), (-r, r), (-r, -r)):
             l = surv[np.clip(ys + dy, 0, h - 1), np.clip(xs + dx, 0, wd - 1)]
             ok = l >= 0
@@ -164,14 +204,22 @@ def thin(lab, rgb, inside, pal, width, tol):
     top = np.argsort(-count, axis=1)[:, :2]
     a, b = top[:, 0], top[:, 1]
     has2 = (count[np.arange(len(ys)), b] > 0) & (a != b)
-    p = rgb[ys, xs].astype(np.float32)
-    pa, pb = pal[a].astype(np.float32), pal[b].astype(np.float32)
+    p = to_lab(rgb[ys, xs])
+    lab_pal = to_lab(pal)
+    pa, pb = lab_pal[a], lab_pal[b]
     v = pb - pa
     t = ((p - pa) * v).sum(1) / np.maximum((v * v).sum(1), 1e-6)
-    resid = np.abs(p - (pa + t[:, None] * v)).max(1)
+    resid = np.sqrt(((p - (pa + t[:, None] * v)) ** 2).sum(1))
     blend = has2 & (t > 0.05) & (t < 0.95) & (resid <= tol)
     new = lab.copy()
     new[ys[blend], xs[blend]] = np.where(t[blend] < 0.5, a[blend], b[blend])
+    total = np.bincount(lab[inside], minlength=n)
+    blended = np.bincount(lab[ys[blend], xs[blend]], minlength=n)
+    gone = blended > edge_share * np.maximum(total, 1)   # colours that only ever blend
+    if gone.any() and not gone.all():
+        keep = np.nonzero(~gone)[0]
+        m = inside & gone[np.maximum(new, 0)] & (new >= 0)
+        new[m] = keep[nearest(to_lab(rgb[m]), lab_pal[keep])]   # by colour, not position
     return new
 
 
@@ -403,7 +451,8 @@ def trace(src, out, progress=None, **opts):
 
     say("label pixels")
     lab = smooth(label_all(rgb, solid, inside, pal), inside, len(pal), cfg["smooth_passes"])
-    lab = thin(lab, rgb, inside, pal, cfg["min_width"] * cfg["scale"], cfg["merge_dist"])
+    lab = thin(lab, rgb, inside, pal, cfg["min_width"] * cfg["scale"], cfg["band_tol"],
+               cfg["edge_share"])
     lab = smooth(lab, inside, len(pal), cfg["smooth_passes"])
 
     core = lab >= 0                             # silhouette minus its outer rim
@@ -504,6 +553,12 @@ def compare(src, svg_path):
 
 
 def demo():
+    # a textured fill spread over two near entries merges; two flat fills stay
+    rng = np.random.default_rng(0)
+    grain = np.clip(rng.normal([90, 60, 30], 12, (4000, 3)), 0, 255).astype(int)
+    flat = np.array([[240, 240, 240]] * 3000 + [[200, 200, 200]] * 3000)
+    pal = palette(np.vstack([grain, flat])[None], np.ones((1, 10000), bool), _cfg(dict(overlap=0.3)))
+    assert len(pal) == 3, pal
     # a 3px band of blend colour between two fills is relabelled; a stroke is not
     pal = np.array([[0, 0, 0], [200, 200, 200], [100, 100, 100], [255, 0, 0]])
     lab = np.zeros((20, 40), np.int16)
@@ -511,8 +566,12 @@ def demo():
     lab[:, 19:22] = 2                                             # the band
     lab[:, 5:8] = 3                                               # a red stroke on black
     rgb = pal[lab]
-    out = thin(lab, rgb, np.ones(lab.shape, bool), pal, 4, 14)
+    out = thin(lab, rgb, np.ones(lab.shape, bool), pal, 4, 20, 0.7)
     assert not (out == 2).any() and (out == 3).sum() == 60, out[10]
+    lab[:, 30:36] = 2                                             # now colour 2 has a body too
+    lab[:, 19:22] = 2
+    out = thin(lab, pal[lab], np.ones(lab.shape, bool), pal, 4, 20, 0.7)
+    assert not (out[:, 19:22] == 2).any() and (out[:, 30:36] == 2).all(), out[10]
     assert straighten("M0 0 L5 0 L10 0 Z").count("L") == 1        # straight run collapses
     assert straighten("M0 0 L10 0 L10 10 L0 10 Z").count("L") == 3  # corners survive
     im = Image.new("RGBA", (64, 64), (0, 0, 0, 0))                # red square on nothing
@@ -520,7 +579,7 @@ def demo():
         for x in range(16, 48):
             im.putpixel((x, y), (200, 30, 30, 255))
     im.save("_demo.png")
-    trace("_demo.png", "_demo.svg", scale=2, min_share=0.05)
+    trace("_demo.png", "_demo.svg", scale=2)
     d = open("_demo.svg").read()
     assert d.count("<path") == 1 and "#C81E1E" in d, d[:200]
     n = pixel_copy("_demo.png", "_demo_exact.svg")
