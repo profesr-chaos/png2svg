@@ -25,4 +25,9 @@ Flat-colour PNG to SVG converter, with a small Tkinter front end.
     python bench.py           # score bench/*.png, diff against bench/baseline.json
     python bench.py --save    # accept the new numbers as the baseline
 
+Scores `trace` and `vtrace` against each source PNG, plus an `rt` (round-trip)
+mode that re-traces the `trace` render instead of the source, isolating error
+the tracer itself adds. Every mode also gets `err_kb` (mean error times file
+size, in KB) as a single size-aware score — lower is better.
+
 A change to `png2svg.py` must move this table, or it does not go in.

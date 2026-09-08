@@ -5,7 +5,8 @@
   "paths": 15,
   "nodes": 28770,
   "bytes": 609048,
-  "secs": 20.68
+  "secs": 22.76,
+  "err_kb": 1886.03
  },
  "cat_face.png:vtrace": {
   "mean": 3.683,
@@ -13,7 +14,17 @@
   "paths": 389,
   "nodes": 5506,
   "bytes": 296685,
-  "secs": 0.17
+  "secs": 0.19,
+  "err_kb": 1067.08
+ },
+ "cat_face.png:rt": {
+  "mean": 0.624,
+  "over40": 0.427,
+  "paths": 14,
+  "nodes": 54021,
+  "bytes": 1106189,
+  "secs": 20.14,
+  "err_kb": 674.08
  },
  "cat_mascot.png:trace": {
   "mean": 2.911,
@@ -21,7 +32,8 @@
   "paths": 24,
   "nodes": 59721,
   "bytes": 1236501,
-  "secs": 30.36
+  "secs": 33.43,
+  "err_kb": 3515.09
  },
  "cat_mascot.png:vtrace": {
   "mean": 3.424,
@@ -29,7 +41,17 @@
   "paths": 1031,
   "nodes": 15054,
   "bytes": 754352,
-  "secs": 0.26
+  "secs": 0.27,
+  "err_kb": 2522.36
+ },
+ "cat_mascot.png:rt": {
+  "mean": 0.808,
+  "over40": 0.47,
+  "paths": 23,
+  "nodes": 71677,
+  "bytes": 1471073,
+  "secs": 28.64,
+  "err_kb": 1160.77
  },
  "cat_sleeping.png:trace": {
   "mean": 1.583,
@@ -37,7 +59,8 @@
   "paths": 12,
   "nodes": 20773,
   "bytes": 429343,
-  "secs": 17.16
+  "secs": 21.29,
+  "err_kb": 663.72
  },
  "cat_sleeping.png:vtrace": {
   "mean": 3.003,
@@ -45,7 +68,17 @@
   "paths": 704,
   "nodes": 9622,
   "bytes": 491439,
-  "secs": 0.21
+  "secs": 0.26,
+  "err_kb": 1441.2
+ },
+ "cat_sleeping.png:rt": {
+  "mean": 0.365,
+  "over40": 0.078,
+  "paths": 12,
+  "nodes": 21217,
+  "bytes": 434524,
+  "secs": 20.08,
+  "err_kb": 154.88
  },
  "headphone_outline.png:trace": {
   "mean": 1.645,
@@ -53,7 +86,8 @@
   "paths": 5,
   "nodes": 1055,
   "bytes": 21166,
-  "secs": 3.17
+  "secs": 3.61,
+  "err_kb": 34.0
  },
  "headphone_outline.png:vtrace": {
   "mean": 3.347,
@@ -61,7 +95,17 @@
   "paths": 87,
   "nodes": 1324,
   "bytes": 69771,
-  "secs": 0.06
+  "secs": 0.06,
+  "err_kb": 228.05
+ },
+ "headphone_outline.png:rt": {
+  "mean": 0.22,
+  "over40": 0.068,
+  "paths": 5,
+  "nodes": 1344,
+  "bytes": 27556,
+  "secs": 3.41,
+  "err_kb": 5.92
  },
  "headphones.png:trace": {
   "mean": 1.136,
@@ -69,7 +113,8 @@
   "paths": 8,
   "nodes": 9092,
   "bytes": 192225,
-  "secs": 11.06
+  "secs": 11.57,
+  "err_kb": 213.25
  },
  "headphones.png:vtrace": {
   "mean": 1.994,
@@ -77,7 +122,17 @@
   "paths": 420,
   "nodes": 6254,
   "bytes": 315934,
-  "secs": 0.16
+  "secs": 0.17,
+  "err_kb": 615.21
+ },
+ "headphones.png:rt": {
+  "mean": 0.217,
+  "over40": 0.011,
+  "paths": 8,
+  "nodes": 19315,
+  "bytes": 401095,
+  "secs": 10.81,
+  "err_kb": 85.0
  },
  "icon_headphones94.png:trace": {
   "mean": 4.01,
@@ -85,7 +140,8 @@
   "paths": 14,
   "nodes": 1205,
   "bytes": 20379,
-  "secs": 0.34
+  "secs": 0.38,
+  "err_kb": 79.8
  },
  "icon_headphones94.png:vtrace": {
   "mean": 26.943,
@@ -93,7 +149,17 @@
   "paths": 141,
   "nodes": 922,
   "bytes": 42937,
-  "secs": 0.01
+  "secs": 0.02,
+  "err_kb": 1129.74
+ },
+ "icon_headphones94.png:rt": {
+  "mean": 2.541,
+  "over40": 0.475,
+  "paths": 11,
+  "nodes": 1428,
+  "bytes": 24229,
+  "secs": 0.29,
+  "err_kb": 60.12
  },
  "icon_pen94.png:trace": {
   "mean": 3.971,
@@ -101,7 +167,8 @@
   "paths": 14,
   "nodes": 1334,
   "bytes": 22973,
-  "secs": 0.29
+  "secs": 0.33,
+  "err_kb": 89.09
  },
  "icon_pen94.png:vtrace": {
   "mean": 11.216,
@@ -109,7 +176,17 @@
   "paths": 140,
   "nodes": 636,
   "bytes": 33853,
-  "secs": 0.01
+  "secs": 0.01,
+  "err_kb": 370.8
+ },
+ "icon_pen94.png:rt": {
+  "mean": 2.73,
+  "over40": 1.358,
+  "paths": 13,
+  "nodes": 1377,
+  "bytes": 23113,
+  "secs": 0.39,
+  "err_kb": 61.62
  },
  "icon_pencil48.png:trace": {
   "mean": 2.072,
@@ -117,7 +194,8 @@
   "paths": 11,
   "nodes": 227,
   "bytes": 3920,
-  "secs": 0.27
+  "secs": 0.29,
+  "err_kb": 7.93
  },
  "icon_pencil48.png:vtrace": {
   "mean": 15.833,
@@ -125,7 +203,17 @@
   "paths": 10,
   "nodes": 106,
   "bytes": 5349,
-  "secs": 0.0
+  "secs": 0.0,
+  "err_kb": 82.71
+ },
+ "icon_pencil48.png:rt": {
+  "mean": 1.11,
+  "over40": 0.087,
+  "paths": 11,
+  "nodes": 247,
+  "bytes": 3987,
+  "secs": 0.25,
+  "err_kb": 4.32
  },
  "mic_flat.png:trace": {
   "mean": 0.751,
@@ -133,7 +221,8 @@
   "paths": 4,
   "nodes": 722,
   "bytes": 13813,
-  "secs": 6.13
+  "secs": 6.87,
+  "err_kb": 10.13
  },
  "mic_flat.png:vtrace": {
   "mean": 1.465,
@@ -141,7 +230,17 @@
   "paths": 21,
   "nodes": 634,
   "bytes": 44730,
-  "secs": 0.08
+  "secs": 0.09,
+  "err_kb": 63.99
+ },
+ "mic_flat.png:rt": {
+  "mean": 0.078,
+  "over40": 0.002,
+  "paths": 4,
+  "nodes": 847,
+  "bytes": 15800,
+  "secs": 6.29,
+  "err_kb": 1.2
  },
  "mic_small.png:trace": {
   "mean": 0.409,
@@ -149,7 +248,8 @@
   "paths": 4,
   "nodes": 1073,
   "bytes": 22560,
-  "secs": 4.15
+  "secs": 5.35,
+  "err_kb": 9.01
  },
  "mic_small.png:vtrace": {
   "mean": 0.823,
@@ -157,7 +257,17 @@
   "paths": 68,
   "nodes": 1222,
   "bytes": 69894,
-  "secs": 0.08
+  "secs": 0.09,
+  "err_kb": 56.17
+ },
+ "mic_small.png:rt": {
+  "mean": 0.066,
+  "over40": 0.018,
+  "paths": 4,
+  "nodes": 1182,
+  "bytes": 25125,
+  "secs": 4.33,
+  "err_kb": 1.62
  },
  "pencil.png:trace": {
   "mean": 1.102,
@@ -165,7 +275,8 @@
   "paths": 17,
   "nodes": 3062,
   "bytes": 67683,
-  "secs": 15.9
+  "secs": 19.27,
+  "err_kb": 72.84
  },
  "pencil.png:vtrace": {
   "mean": 1.447,
@@ -173,7 +284,17 @@
   "paths": 201,
   "nodes": 4049,
   "bytes": 207511,
-  "secs": 0.11
+  "secs": 0.14,
+  "err_kb": 293.23
+ },
+ "pencil.png:rt": {
+  "mean": 0.258,
+  "over40": 0.055,
+  "paths": 15,
+  "nodes": 7543,
+  "bytes": 158359,
+  "secs": 20.61,
+  "err_kb": 39.9
  },
  "pencil_outline.png:trace": {
   "mean": 1.411,
@@ -181,7 +302,8 @@
   "paths": 6,
   "nodes": 878,
   "bytes": 16672,
-  "secs": 2.92
+  "secs": 3.79,
+  "err_kb": 22.97
  },
  "pencil_outline.png:vtrace": {
   "mean": 2.75,
@@ -189,7 +311,17 @@
   "paths": 46,
   "nodes": 830,
   "bytes": 50016,
-  "secs": 0.04
+  "secs": 0.04,
+  "err_kb": 134.32
+ },
+ "pencil_outline.png:rt": {
+  "mean": 0.287,
+  "over40": 0.22,
+  "paths": 6,
+  "nodes": 1536,
+  "bytes": 31338,
+  "secs": 3.2,
+  "err_kb": 8.78
  },
  "ui_toggles.png:trace": {
   "mean": 2.556,
@@ -197,7 +329,8 @@
   "paths": 5,
   "nodes": 1822,
   "bytes": 29051,
-  "secs": 0.33
+  "secs": 0.37,
+  "err_kb": 72.51
  },
  "ui_toggles.png:vtrace": {
   "mean": 7.582,
@@ -205,6 +338,16 @@
   "paths": 15,
   "nodes": 123,
   "bytes": 5180,
-  "secs": 0.0
+  "secs": 0.0,
+  "err_kb": 38.35
+ },
+ "ui_toggles.png:rt": {
+  "mean": 2.37,
+  "over40": 1.875,
+  "paths": 10,
+  "nodes": 2525,
+  "bytes": 43226,
+  "secs": 0.59,
+  "err_kb": 100.04
  }
 }
