@@ -28,6 +28,8 @@ DEFAULTS = dict(
     min_share=0.01,      # drop colours below this share of the artwork
     merge_dist=14,       # max-channel distance that still counts as one colour
     smooth_passes=2,     # 3x3 majority votes over the labels
+    min_width=1.0,       # px: a band of a blended colour up to this wide is an
+                         # anti-aliasing transition, not a shape
     erode=1,             # px of the outer rim that stays single-layer
     alphamax=1.0,        # potrace corner threshold (1.0 = smooth curves)
     opttolerance=0.6,
@@ -81,6 +83,11 @@ def label_all(rgb, solid, inside, pal):
         near[i:i + CHUNK] = np.abs(c[:, None, :] - pal[None]).sum(2).argmin(1)
     lab[solid] = near
     lab[~inside] = -1
+    return _flood(lab, inside)
+
+
+def _flood(lab, inside):
+    """Give every unlabelled pixel inside the shape the label of a neighbour."""
     while (todo := inside & (lab < 0)).any():
         grown = lab.copy()
         for dy, dx in NEIGHBOURS:
@@ -92,6 +99,58 @@ def label_all(rgb, solid, inside, pal):
             break
         lab = grown
     return lab
+
+
+def _runs(lab):
+    """Per pixel: the shorter of its horizontal and vertical run of equal labels."""
+    out = np.full(lab.shape, np.iinfo(np.int32).max, np.int32)
+    for axis in (0, 1):
+        a = lab if axis == 1 else lab.T
+        cut = np.ones(a.shape, bool)
+        cut[:, 1:] = a[:, 1:] != a[:, :-1]           # a run starts at every cut
+        rid = np.cumsum(cut.ravel())                  # run id, unique across rows
+        length = np.bincount(rid)[rid].reshape(a.shape)
+        out = np.minimum(out, length if axis == 1 else length.T)
+    return out
+
+
+def thin(lab, rgb, inside, pal, width, tol):
+    """Relabel the anti-aliasing bands that landed on a third colour.
+
+    Two flat fills that meet get a one-pixel band of blended colour between
+    them. When that blend matches a real palette colour, the band is labelled
+    as one and traces as hundreds of slivers. A pixel is a band pixel if its
+    run of equal labels is short in both directions AND its own colour sits on
+    the line between the two colours that surround it. A real thin stroke
+    fails the second test, so it survives.
+    """
+    w = int(round(width))
+    cand = inside & (_runs(lab) <= w)
+    if not cand.any():
+        return lab
+    surv = lab.copy()
+    surv[cand] = -1
+    ys, xs = np.nonzero(cand)
+    h, wd = lab.shape
+    n = len(pal)
+    count = np.zeros((len(ys), n), np.int16)      # labels seen around each candidate
+    for r in range(1, w + 2):
+        for dy, dx in ((r, 0), (-r, 0), (0, r), (0, -r), (r, r), (r, -r), (-r, r), (-r, -r)):
+            l = surv[np.clip(ys + dy, 0, h - 1), np.clip(xs + dx, 0, wd - 1)]
+            ok = l >= 0
+            count[np.nonzero(ok)[0], l[ok]] += 1
+    top = np.argsort(-count, axis=1)[:, :2]
+    a, b = top[:, 0], top[:, 1]
+    has2 = (count[np.arange(len(ys)), b] > 0) & (a != b)
+    p = rgb[ys, xs].astype(np.float32)
+    pa, pb = pal[a].astype(np.float32), pal[b].astype(np.float32)
+    v = pb - pa
+    t = ((p - pa) * v).sum(1) / np.maximum((v * v).sum(1), 1e-6)
+    resid = np.abs(p - (pa + t[:, None] * v)).max(1)
+    blend = has2 & (t > 0.05) & (t < 0.95) & (resid <= tol)
+    new = lab.copy()
+    new[ys[blend], xs[blend]] = np.where(t[blend] < 0.5, a[blend], b[blend])
+    return new
 
 
 def smooth(lab, inside, n_colours, passes):
@@ -320,6 +379,8 @@ def trace(src, out, progress=None, **opts):
 
     say("label pixels")
     lab = smooth(label_all(rgb, solid, inside, pal), inside, len(pal), cfg["smooth_passes"])
+    lab = thin(lab, rgb, inside, pal, cfg["min_width"] * cfg["scale"], cfg["merge_dist"])
+    lab = smooth(lab, inside, len(pal), cfg["smooth_passes"])
 
     core = lab >= 0                             # silhouette minus its outer rim
     for _ in range(cfg["erode"] * cfg["scale"]):
