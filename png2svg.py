@@ -40,6 +40,13 @@ DEFAULTS = dict(
                          # transition, not a fill, and goes
     band_tol=20,         # delta E a band pixel may sit off the line between the
                          # two colours around it and still count as their blend
+    ink_min=0.35,        # px of colour a lost stroke must hold to be put back;
+                         # 0 turns the coverage recovery off
+    ink_tol=0.25,        # coverage under this is a soft edge, not held ink
+    ink_share=0.2,       # only colours below this share of the art can be ink
+    ink_de=80,           # delta E a recovered colour must stand off the colour
+                         # it is recovered from: shading between near colours
+                         # holds coverage too, but it is not a lost stroke
     erode=1,             # px of the outer rim that stays single-layer
     alphamax=0.5,        # potrace corner threshold: 1.0 rounds every corner,
                          # 0.5 keeps the corners of flat artwork sharp
@@ -202,6 +209,89 @@ def _flood(lab, inside):
             break
         lab = grown
     return lab
+
+
+def _rows(t, lb, c, thr, need, wide):
+    """One axis of ink(): mark the densest pixels of every run that holds ink.
+
+    A run is a maximal stretch of one row with coverage over `thr`, bounded by
+    coverage at or under it. It counts only if it is at most `wide` across --
+    a row crossing a stroke, not a row running along one or down a gradient --
+    and if the pixels on both sides of it carry the same colour, and not c
+    already. A stroke crosses one fill and comes out on the same fill. The
+    anti-aliased edge between two fills also holds coverage of a third colour,
+    but it has a different colour on each side, and it is not a lost stroke:
+    recovering it lays a hairline along every contour in the artwork.
+    """
+    h, w = t.shape
+    z = np.zeros((h, 1), t.dtype)
+    tp = np.hstack([z, t, z]).ravel()             # pad: no run crosses a row end
+    lp = np.hstack([z - 1, lb, z - 1]).astype(np.int16).ravel()
+    d = np.diff((tp > thr).astype(np.int8))
+    beg, end = np.flatnonzero(d > 0) + 1, np.flatnonzero(d < 0) + 1
+    hit = np.zeros(len(tp), bool)
+    if not len(beg):
+        return hit.reshape(h, w + 2)[:, 1:-1]
+    tot = np.add.reduceat(tp, np.stack([beg, end], 1).ravel())[::2]
+    take = ((tot >= need) & (end - beg <= wide)
+            & (lp[beg - 1] == lp[end]) & (lp[beg - 1] != c))
+    beg, end, tot = beg[take], end[take], tot[take]
+    if not len(beg):
+        return hit.reshape(h, w + 2)[:, 1:-1]
+    n = end - beg
+    idx = np.repeat(beg - np.concatenate([[0], np.cumsum(n)])[:-1], n) + np.arange(n.sum())
+    mid = np.add.reduceat(tp[idx] * idx, np.concatenate([[0], np.cumsum(n)])[:-1]) / tot
+    k = np.clip(np.rint(tot).astype(int), 1, n)   # how many pixels of ink to place
+    beg = np.clip(np.rint(mid - (k - 1) / 2).astype(int), beg, end - k)
+    hit[np.repeat(beg - np.concatenate([[0], np.cumsum(k)])[:-1], k) + np.arange(k.sum())] = True
+    return hit.reshape(h, w + 2)[:, 1:-1]
+
+
+def ink(lab, rgb, inside, pal, sure, s, thr=0.25, need=0.35, share=0.2, wide=2.0,
+        min_de=80):
+    """Put back the strokes and text that are thinner than a source pixel.
+
+    A 0.6 px stem that straddles a pixel boundary leaves two pixels at 30% ink
+    each. No threshold on colour calls either one ink, so the stroke vanishes.
+    Coverage, though, is conserved: for each minority colour c, measure how
+    much of it a pixel holds (t: where the pixel sits on the line from its own
+    colour to c, in sRGB), then scan rows and columns for a run of held ink
+    that never reaches the label. A run holding `need` of a source pixel of c
+    is a lost stroke: give its round(sum t) pixels around the t-weighted
+    centroid to c, and freeze them so no later vote takes them back.
+
+    Only a colour that stands `min_de` off the one that took its place counts.
+    Shading between two near colours holds coverage in exactly the same way,
+    and putting that back sprinkles a soft gradient with specks.
+    """
+    P = np.asarray(pal, np.float32)
+    lp = to_lab(P)
+    de = np.sqrt(((lp[:, None] - lp[None]) ** 2).sum(2))
+    px, ins = rgb.reshape(-1, 3), inside.ravel()
+    cnt = np.bincount(np.maximum(lab[inside], 0), minlength=len(P))
+    lab, sure = lab.copy(), sure.copy()
+    for c in np.nonzero(cnt < share * cnt.sum())[0]:
+        is_c = lab == c
+        labi = np.maximum(lab, 0).ravel()           # what each pixel became
+        j = np.flatnonzero(ins & ~is_c.ravel() & (de[c][labi] >= min_de))
+        u = np.empty(len(j), np.float32)
+        for i in range(0, len(j), CHUNK):           # chunked: the 4x grid is big
+            k = j[i:i + CHUNK]
+            a = P[labi[k]]                          # the colour that took c's place
+            v = P[c] - a
+            u[i:i + CHUNK] = ((px[k] - a) * v).sum(1) / np.maximum((v * v).sum(1), 1e-6)
+        if not (u > thr).any():
+            continue
+        t = np.zeros(lab.size, np.float32)
+        t[j] = u.clip(0, 1)
+        t = t.reshape(lab.shape)
+        hot = t > thr
+        r, k = np.flatnonzero(hot.any(1)), np.flatnonzero(hot.any(0))
+        hit = np.zeros(lab.shape, bool)             # only the rows and columns
+        hit[r] = _rows(t[r], lab[r], c, thr, need * s, wide * s)  # that hold any ink
+        hit[:, k] |= _rows(t[:, k].T, lab[:, k].T, c, thr, need * s, wide * s).T
+        lab[hit], sure[hit] = c, True
+    return lab, sure
 
 
 def _runs(lab):
@@ -605,6 +695,10 @@ def trace(src, out, progress=None, **opts):
     say("label pixels")
     s = cfg["scale"]
     lab, sure = label_all(rgb, solid, inside, pal, cfg["merge_dist"] / 2)
+    if cfg["ink_min"]:
+        lab, sure = ink(lab, rgb, inside, pal, sure, s, cfg["ink_tol"],
+                        cfg["ink_min"], cfg["ink_share"], cfg["min_width"],
+                        cfg["ink_de"])
     lab = smooth(lab, inside, len(pal), cfg["smooth_radius"] * s, cfg["smooth_passes"], sure)
     lab = thin(lab, rgb, inside, pal, cfg["min_width"] * cfg["scale"], cfg["band_tol"],
                cfg["edge_share"])
@@ -757,6 +851,23 @@ def demo():
     assert (out[:, 10:14] == 1).all() and (out[2:-2, 28:30] == 0).all() and (out[2:-2, 30:32] == 1).all(), out[:4]
     assert straighten("M0 0 L5 0 L10 0 Z").count("L") == 1        # straight run collapses
     assert straighten("M0 0 L10 0 L10 10 L0 10 Z").count("L") == 3  # corners survive
+    # a 0.6 px line on a pixel edge leaves two columns holding a third of a
+    # pixel of ink each: no threshold calls either one ink, coverage does
+    from PIL import ImageDraw
+    big = Image.new("L", (512, 512), 255)
+    ImageDraw.Draw(big).rectangle([16, 16, 175, 175], fill=0)      # black, for the palette
+    ImageDraw.Draw(big).line([(304, 0), (304, 511)], fill=0, width=5)
+    p = os.path.join(tempfile.gettempdir(), "_thin_line.png")
+    big.resize((64, 64), Image.BOX).convert("RGBA").save(p)        # real coverage
+    trace(p, p + ".svg", min_share=0.05)
+    try:
+        r = compare(p, p + ".svg")
+    except ImportError:
+        print("cairosvg not installed; skipped the thin-line check")
+    else:
+        g = lambda f: 255 - np.asarray(Image.open(f).convert("L"), float)[:, 30:46]
+        a, b = g(p).sum(), g(r["render"]).sum()
+        assert abs(b - a) <= 0.25 * a, (a, b)                      # ink is conserved
     im = Image.new("RGBA", (64, 64), (0, 0, 0, 0))                # red square on nothing
     for y in range(16, 48):
         for x in range(16, 48):
