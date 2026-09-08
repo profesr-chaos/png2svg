@@ -81,12 +81,21 @@ def to_lab(rgb):
                      200 * (f[..., 1] - f[..., 2])], -1)
 
 
-def nearest(lab_px, lab_pal, margin=None):
+def nearest(lab_px, lab_pal, margin=None, rgb_px=None, rgb_pal=None):
     """Index of the nearest palette colour for each pixel, in Lab.
 
     With `margin`, also return which pixels are sure: the runner-up colour is
     more than `margin` delta E further away. Everything else sits between two
     colours and may take the local majority later.
+
+    With `rgb_px`/`rgb_pal`, the choice between the two nearest colours A and B
+    is made at 50% coverage instead of at equal Lab distance. Anti-aliasing
+    mixes A and B in sRGB, so the pixel that is half A sits halfway along the
+    line A->B there -- but Lab is not linear in coverage, and its midpoint for
+    black/white sits at about 55% grey. Labelling by Lab alone therefore eats a
+    fraction of a pixel off every dark shape. Project the pixel onto A->B in
+    sRGB and split at t = 0.5. Which two colours are in play, and the sure
+    mask, are unchanged.
     """
     out = np.empty(len(lab_px), np.int16)
     sure = np.empty(len(lab_px), bool)
@@ -94,9 +103,19 @@ def nearest(lab_px, lab_pal, margin=None):
         d = lab_px[i:i + CHUNK, None, :] - lab_pal[None]
         d = np.sqrt((d * d).sum(2))
         out[i:i + CHUNK] = d.argmin(1)
-        if margin is not None and d.shape[1] > 1:
-            two = np.partition(d, 1, axis=1)[:, :2]
-            sure[i:i + CHUNK] = two[:, 1] - two[:, 0] > margin
+        if d.shape[1] > 1 and (margin is not None or rgb_px is not None):
+            two = np.argpartition(d, 1, axis=1)[:, :2]
+            r = np.arange(len(d))
+            a, b = two[:, 0], two[:, 1]
+            flip = d[r, a] > d[r, b]             # argpartition does not order the two
+            a, b = np.where(flip, b, a), np.where(flip, a, b)
+            if margin is not None:
+                sure[i:i + CHUNK] = d[r, b] - d[r, a] > margin
+            if rgb_px is not None:
+                pa, pb = rgb_pal[a], rgb_pal[b]
+                v = pb - pa
+                t = ((rgb_px[i:i + CHUNK] - pa) * v).sum(1) / np.maximum((v * v).sum(1), 1e-6)
+                out[i:i + CHUNK] = np.where(t.clip(0, 1) < 0.5, a, b)
     return (out, sure) if margin is not None else out
 
 
@@ -160,7 +179,9 @@ def label_all(rgb, solid, inside, pal, margin):
     """
     lab = np.full(solid.shape, -1, np.int16)
     sure = np.zeros(solid.shape, bool)
-    lab[solid], sure[solid] = nearest(to_lab(rgb[solid]), to_lab(pal), margin)
+    px = rgb[solid].astype(np.float32)
+    lab[solid], sure[solid] = nearest(to_lab(px), to_lab(pal), margin,
+                                      px, np.asarray(pal, np.float32))
     lab[~inside] = -1
     return _flood(lab, inside), sure
 
@@ -612,6 +633,11 @@ def compare(src, svg_path):
 
 
 def demo():
+    # the black/white boundary sits at 50% coverage (127), not at equal Lab (119)
+    bw = np.array([[0, 0, 0], [255, 255, 255]], float)
+    grey = np.array([[122, 122, 122], [133, 133, 133]], float)
+    assert list(nearest(to_lab(grey), to_lab(bw))) == [1, 1]
+    assert list(nearest(to_lab(grey), to_lab(bw), rgb_px=grey, rgb_pal=bw)) == [0, 1]
     # a textured fill spread over two near entries merges; two flat fills stay
     rng = np.random.default_rng(0)
     grain = np.clip(rng.normal([90, 60, 30], 12, (4000, 3)), 0, 255).astype(int)
