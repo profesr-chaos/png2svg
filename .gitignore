@@ -1,4 +1,3 @@
+bench/out/
+_demo*
 __pycache__/
-*.pyc
-*.svg
-*.png
