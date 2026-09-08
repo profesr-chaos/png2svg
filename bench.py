@@ -24,12 +24,36 @@ import png2svg
 BASE = "bench/baseline.json"
 MODES = {"trace": png2svg.trace, "vtrace": png2svg.vtrace}
 
+_ARGC = {"M": 2, "L": 2, "C": 6, "Q": 4, "Z": 0}
+
+
+def _count_nodes(svg):
+    """Segments across every path's d, absolute or relative. A letter can be
+    omitted for a repeated command (`l1 2 3 4` is two linetos), so this
+    counts coordinate groups rather than letters -- 1 pair for M/L, 3 for C."""
+    n = 0
+    for d in re.findall(r'd="([^"]*)"', svg):
+        toks = re.findall(r"[A-Za-z]|-?\d*\.?\d+(?:[eE][+-]?\d+)?", d)
+        i, cmd = 0, None
+        while i < len(toks):
+            if toks[i].isalpha():
+                cmd = toks[i].upper()
+                i += 1
+                continue
+            argc = _ARGC.get(cmd, 0)
+            if argc == 0:
+                i += 1
+                continue
+            n += 1
+            i += argc
+    return n
+
 
 def _score_svg(svg_path, cmp_src, secs):
     svg = open(svg_path).read()
     r = png2svg.compare(cmp_src, svg_path)
     d = dict(mean=round(r["mean"], 3), over40=round(r["over40"], 3),
-             paths=svg.count("<path"), nodes=len(re.findall(r"[MLCQ]", svg)),
+             paths=svg.count("<path"), nodes=_count_nodes(svg),
              bytes=len(svg), secs=round(secs, 2))
     d["err_kb"] = round(d["mean"] * d["bytes"] / 1024, 2)
     return d, r["render"]
