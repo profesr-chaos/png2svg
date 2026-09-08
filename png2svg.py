@@ -338,16 +338,18 @@ def straighten(d, tol=DEFAULTS["straight_tol"]):
             else:
                 flat.append(s)
             cur = s[-1]
-        merged, cur = [], p0
+        merged, cur, dropped = [], p0, []
         for s in flat:                          # drop the joints inside a straight run
             if (s[0] == "L" and merged and merged[-1][0] == "L"
-                    and _dist(merged[-1][1], cur, s[1]) <= tol):
+                    and all(_dist(q, cur, s[1]) <= tol for q in dropped + [merged[-1][1]])):
+                dropped.append(merged[-1][1])   # every dropped joint must stay near the chord
                 merged[-1] = ("L", s[1])
             else:
                 if merged:
                     cur = merged[-1][-1]
                 merged.append(s)
-        f = lambda p: "%.2f %.2f" % p
+                dropped = []
+        f = lambda p: " ".join(("%.1f" % v).rstrip("0").rstrip(".") for v in p)
         out.append("M" + f(p0) + " " + " ".join(
             "L" + f(s[1]) if s[0] == "L" else "C%s %s %s" % (f(s[1]), f(s[2]), f(s[3]))
             for s in merged) + " Z")
@@ -481,6 +483,15 @@ def compare(src, svg_path):
 
 
 def demo():
+    # a 3px band of blend colour between two fills is relabelled; a stroke is not
+    pal = np.array([[0, 0, 0], [200, 200, 200], [100, 100, 100], [255, 0, 0]])
+    lab = np.zeros((20, 40), np.int16)
+    lab[:, 20:] = 1
+    lab[:, 19:22] = 2                                             # the band
+    lab[:, 5:8] = 3                                               # a red stroke on black
+    rgb = pal[lab]
+    out = thin(lab, rgb, np.ones(lab.shape, bool), pal, 4, 14)
+    assert not (out == 2).any() and (out == 3).sum() == 60, out[10]
     assert straighten("M0 0 L5 0 L10 0 Z").count("L") == 1        # straight run collapses
     assert straighten("M0 0 L10 0 L10 10 L0 10 Z").count("L") == 3  # corners survive
     im = Image.new("RGBA", (64, 64), (0, 0, 0, 0))                # red square on nothing
