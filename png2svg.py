@@ -29,7 +29,11 @@ DEFAULTS = dict(
     merge_dist=10,       # Lab distance (delta E) that still counts as one colour
     overlap=0.5,         # share of a colour's pixels that sit as close to another
                          # colour, above which the two are one textured colour
-    smooth_passes=2,     # 3x3 majority votes over the labels
+    smooth_passes=1,     # majority votes over the labels
+    smooth_radius=1.0,   # px: half-width of the vote window; a label that flips
+                         # along a soft gradient settles to the local majority
+    max_island=60,       # px^2: a patch of one colour up to this size, fully
+                         # inside a near colour, is shading noise and takes it
     min_width=2.0,       # px: a band of a blended colour up to this wide is an
                          # edge transition, not a shape (soft edges need more)
     edge_share=0.5,      # a colour whose pixels blend more often than this is a
@@ -77,13 +81,23 @@ def to_lab(rgb):
                      200 * (f[..., 1] - f[..., 2])], -1)
 
 
-def nearest(lab_px, lab_pal):
-    """Index of the nearest palette colour for each pixel, in Lab."""
+def nearest(lab_px, lab_pal, margin=None):
+    """Index of the nearest palette colour for each pixel, in Lab.
+
+    With `margin`, also return which pixels are sure: the runner-up colour is
+    more than `margin` delta E further away. Everything else sits between two
+    colours and may take the local majority later.
+    """
     out = np.empty(len(lab_px), np.int16)
+    sure = np.empty(len(lab_px), bool)
     for i in range(0, len(lab_px), CHUNK):      # chunked: the 4x grid is big
         d = lab_px[i:i + CHUNK, None, :] - lab_pal[None]
-        out[i:i + CHUNK] = (d * d).sum(2).argmin(1)
-    return out
+        d = np.sqrt((d * d).sum(2))
+        out[i:i + CHUNK] = d.argmin(1)
+        if margin is not None and d.shape[1] > 1:
+            two = np.partition(d, 1, axis=1)[:, :2]
+            sure[i:i + CHUNK] = two[:, 1] - two[:, 0] > margin
+    return (out, sure) if margin is not None else out
 
 
 def palette(rgb, solid, cfg):
@@ -138,12 +152,17 @@ def _merge_overlap(cols, n, lab, pal, max_de, ratio, margin=3.0):
     return pal.round().astype(int)
 
 
-def label_all(rgb, solid, inside, pal):
-    """Label the solid pixels, then flood the anti-aliased rim from its neighbours."""
+def label_all(rgb, solid, inside, pal, margin):
+    """Label the solid pixels, then flood the anti-aliased rim from its neighbours.
+
+    Also returns the sure mask: pixels clearly of one colour, which no vote
+    may change. That keeps one-pixel text and lines through a wide vote.
+    """
     lab = np.full(solid.shape, -1, np.int16)
-    lab[solid] = nearest(to_lab(rgb[solid]), to_lab(pal))
+    sure = np.zeros(solid.shape, bool)
+    lab[solid], sure[solid] = nearest(to_lab(rgb[solid]), to_lab(pal), margin)
     lab[~inside] = -1
-    return _flood(lab, inside)
+    return _flood(lab, inside), sure
 
 
 def _flood(lab, inside):
@@ -223,34 +242,71 @@ def thin(lab, rgb, inside, pal, width, tol, edge_share):
     return new
 
 
-def smooth(lab, inside, n_colours, passes):
-    """3x3 majority vote: kills compression speckle so the traced edges stay clean.
-
-    Only a pixel with a mixed neighbourhood can change, and that is a few percent
-    of them. Vote on those alone: the cost drops with the colour count, not with
-    the pixel count.
+def smooth(lab, inside, n_colours, radius, passes, sure=None):
+    """Majority vote in a (2r+1)^2 window: settles labels that flip along a
+    soft gradient, and kills compression speckle. One box filter per colour
+    (PIL, C speed) counts the votes; the highest count wins, lowest index on
+    a tie. A sure pixel votes but never changes.
     """
+    from PIL import ImageFilter
+    r = max(1, int(round(radius)))
     for _ in range(passes):
-        shifts = np.stack([np.roll(lab, (dy, dx), (0, 1))
-                           for dy in (-1, 0, 1) for dx in (-1, 0, 1)])
-        mixed = (shifts != lab).any(0)
-        vals = shifts[:, mixed].T               # (m, 9) neighbourhoods to settle
-        if not len(vals):
-            break
-        best = np.zeros(len(vals), np.int8)
-        pick = np.zeros(len(vals), np.int16)
-        for c in range(n_colours):              # lowest index wins a tie, as before
-            v = (vals == c).sum(1).astype(np.int8)
-            take = v > best
-            best[take] = v[take]
+        best = np.zeros(lab.shape, np.uint8)
+        pick = lab.copy()
+        for c in range(n_colours):
+            m = Image.fromarray((lab == c).astype(np.uint8) * 255)
+            cnt = np.asarray(m.filter(ImageFilter.BoxBlur(r)))
+            take = cnt > best
+            best[take] = cnt[take]
             pick[take] = c
-        new = lab.copy()
-        new[mixed] = pick
-        new[~inside] = -1
-        if (new == lab).all():
+        pick[~inside] = -1
+        if sure is not None:
+            pick[sure] = lab[sure]
+        if (pick == lab).all():
             break
-        lab = new
+        lab = pick
     return lab
+
+
+def islands(lab, pal, inside, max_area, max_de, purity=0.9):
+    """Give a small patch, fully inside one near colour, that colour.
+
+    Soft shading pushes part of a fill past the palette midpoint, so a shaded
+    stripe grows a patch of the outline brown. The patch is small, one colour
+    surrounds it, and the two colours are near. Such a patch is noise. A real
+    detail on a fill, an eye highlight on orange, sits far from its neighbour
+    in colour and stays. Needs scipy; without it this step is skipped.
+    """
+    try:
+        from scipy import ndimage
+    except ImportError:
+        return lab
+    n = len(pal)
+    lp = to_lab(pal)
+    de = np.sqrt(((lp[:, None] - lp[None]) ** 2).sum(2))
+    out = lab.copy()
+    for c in range(n):
+        comp, k = ndimage.label(lab == c)
+        if k == 0:
+            continue
+        size = np.bincount(comp.ravel(), minlength=k + 1)
+        small = size <= max_area
+        small[0] = False
+        if not small.any():
+            continue
+        ring = np.zeros((k + 1) * n)              # neighbour labels per patch
+        for a, b in ((comp[:, :-1], lab[:, 1:]), (comp[:, 1:], lab[:, :-1]),
+                     (comp[:-1], lab[1:]), (comp[1:], lab[:-1])):
+            m = (a > 0) & (b != c) & (b >= 0) & small[a]
+            ring += np.bincount(a[m] * n + b[m], minlength=(k + 1) * n)
+        ring = ring.reshape(k + 1, n)
+        tot = ring.sum(1)
+        e = ring.argmax(1)
+        take = small & (tot > 0) & (ring[np.arange(k + 1), e] >= purity * tot) & (de[c, e] <= max_de)
+        if take.any():
+            m = take[comp]
+            out[m] = e[comp[m]]
+    return out
 
 
 def to_path(mask, cfg):
@@ -450,10 +506,13 @@ def trace(src, out, progress=None, **opts):
     solid, inside = alpha >= 200, alpha >= 128
 
     say("label pixels")
-    lab = smooth(label_all(rgb, solid, inside, pal), inside, len(pal), cfg["smooth_passes"])
+    s = cfg["scale"]
+    lab, sure = label_all(rgb, solid, inside, pal, cfg["merge_dist"] / 2)
+    lab = smooth(lab, inside, len(pal), cfg["smooth_radius"] * s, cfg["smooth_passes"], sure)
     lab = thin(lab, rgb, inside, pal, cfg["min_width"] * cfg["scale"], cfg["band_tol"],
                cfg["edge_share"])
-    lab = smooth(lab, inside, len(pal), cfg["smooth_passes"])
+    lab = smooth(lab, inside, len(pal), cfg["smooth_radius"] * s, cfg["smooth_passes"], sure)
+    lab = islands(lab, pal, inside, cfg["max_island"] * s * s, 2 * cfg["merge_dist"])
 
     core = lab >= 0                             # silhouette minus its outer rim
     for _ in range(cfg["erode"] * cfg["scale"]):
@@ -572,6 +631,20 @@ def demo():
     lab[:, 19:22] = 2
     out = thin(lab, pal[lab], np.ones(lab.shape, bool), pal, 4, 20, 0.7)
     assert not (out[:, 19:22] == 2).any() and (out[:, 30:36] == 2).all(), out[10]
+    # a small near-colour patch inside a fill goes; a far-colour patch stays
+    pal = np.array([[200, 120, 60], [190, 110, 55], [255, 255, 255]])
+    lab = np.zeros((40, 40), np.int16)
+    lab[10:14, 10:14] = 1
+    lab[25:29, 25:29] = 2
+    out = islands(lab, pal, np.ones(lab.shape, bool), 50, 20)
+    assert (out[10:14, 10:14] == 0).all() and (out[25:29, 25:29] == 2).all(), out
+    # the vote settles a flip along a gradient but keeps a 4px line
+    lab = np.zeros((30, 60), np.int16)
+    lab[:, 30:] = 1
+    lab[:, 28:32] = np.arange(30)[:, None] % 2                    # flicker on the border
+    lab[:, 10:14] = 1                                             # a line, 4 grid px
+    out = smooth(lab, np.ones(lab.shape, bool), 2, 2, 2)
+    assert (out[:, 10:14] == 1).all() and (out[2:-2, 28:30] == 0).all() and (out[2:-2, 30:32] == 1).all(), out[:4]
     assert straighten("M0 0 L5 0 L10 0 Z").count("L") == 1        # straight run collapses
     assert straighten("M0 0 L10 0 L10 10 L0 10 Z").count("L") == 3  # corners survive
     im = Image.new("RGBA", (64, 64), (0, 0, 0, 0))                # red square on nothing
