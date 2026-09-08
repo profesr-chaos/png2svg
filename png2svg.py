@@ -26,7 +26,7 @@ from PIL import Image
 DEFAULTS = dict(
     scale=4,             # trace grid: 4x gives quarter-pixel edge placement
     min_share=0.01,      # drop colours below this share of the artwork
-    merge_dist=14,       # max-channel distance that still counts as one colour
+    merge_dist=10,       # Lab distance (delta E) that still counts as one colour
     smooth_passes=2,     # 3x3 majority votes over the labels
     min_width=1.0,       # px: a band of a blended colour up to this wide is an
                          # anti-aliasing transition, not a shape
@@ -57,32 +57,53 @@ def _cfg(opts):
     return cfg
 
 
+_M = np.array([[0.4124, 0.3576, 0.1805], [0.2126, 0.7152, 0.0722], [0.0193, 0.1192, 0.9505]])
+_WHITE = _M.sum(1)
+
+
+def to_lab(rgb):
+    """sRGB 0-255 -> CIE Lab. A unit step here matches what the eye calls one."""
+    c = np.asarray(rgb, np.float32) / 255
+    c = np.where(c > 0.04045, ((c + 0.055) / 1.055) ** 2.4, c / 12.92)
+    xyz = c @ _M.T.astype(np.float32) / _WHITE.astype(np.float32)
+    f = np.where(xyz > 0.008856, np.cbrt(xyz), 7.787 * xyz + 16 / 116)
+    return np.stack([116 * f[..., 1] - 16, 500 * (f[..., 0] - f[..., 1]),
+                     200 * (f[..., 1] - f[..., 2])], -1)
+
+
+def nearest(lab_px, lab_pal):
+    """Index of the nearest palette colour for each pixel, in Lab."""
+    out = np.empty(len(lab_px), np.int16)
+    for i in range(0, len(lab_px), CHUNK):      # chunked: the 4x grid is big
+        d = lab_px[i:i + CHUNK, None, :] - lab_pal[None]
+        out[i:i + CHUNK] = (d * d).sum(2).argmin(1)
+    return out
+
+
 def palette(rgb, solid, cfg):
     """The flat colours, taken from the fully opaque pixels only."""
     from collections import Counter
     px = rgb[solid]
+    counts = Counter(map(tuple, px.tolist())).most_common()
+    cols = np.array([c for c, _ in counts])
+    n = np.array([k for _, k in counts])
+    lab = to_lab(cols)
     pal = []
-    for col, _ in Counter(map(tuple, px.tolist())).most_common():
-        c = np.array(col)
-        if all(np.abs(c - p).max() > cfg["merge_dist"] for p in pal):
-            pal.append(c)
-    pal = np.array(pal)
-    lab = np.abs(px[:, None, :] - pal[None]).sum(2).argmin(1)
-    keep = [i for i in range(len(pal)) if (lab == i).sum() / len(px) >= cfg["min_share"]]
+    for i in range(len(cols)):                  # greedy by frequency, merge in Lab
+        if not pal or ((lab[i] - lab[pal]) ** 2).sum(1).min() > cfg["merge_dist"] ** 2:
+            pal.append(i)
+    near = nearest(lab, lab[pal])
+    share = np.bincount(near, n, len(pal)) / n.sum()
+    keep = [p for p, sh in zip(pal, share) if sh >= cfg["min_share"]]
     if not keep:
         raise ValueError("no colour covers min_share of the image; lower it")
-    return pal[keep]
+    return cols[keep]
 
 
 def label_all(rgb, solid, inside, pal):
     """Label the solid pixels, then flood the anti-aliased rim from its neighbours."""
     lab = np.full(solid.shape, -1, np.int16)
-    px = rgb[solid].astype(np.int32)
-    near = np.empty(len(px), np.int16)
-    for i in range(0, len(px), CHUNK):          # chunked: the 4x grid is big
-        c = px[i:i + CHUNK]
-        near[i:i + CHUNK] = np.abs(c[:, None, :] - pal[None]).sum(2).argmin(1)
-    lab[solid] = near
+    lab[solid] = nearest(to_lab(rgb[solid]), to_lab(pal))
     lab[~inside] = -1
     return _flood(lab, inside)
 
