@@ -640,6 +640,52 @@ def _dist(p, a, b):
     return abs(dx * (ay - py) - dy * (ax - px)) / n
 
 
+def _r1(v):
+    """Round to one decimal, as a float, matching how it will be printed."""
+    return float("%.1f" % v)
+
+
+def _fmt(v):
+    s = ("%.1f" % v).rstrip("0").rstrip(".")
+    return "0" if s in ("-0", "") else s
+
+
+def _join(vals):
+    """Space-join formatted numbers, but skip the space before a '-': the
+    minus sign is itself a valid separator in the SVG path grammar."""
+    out = []
+    for v in vals:
+        s = _fmt(v)
+        if out and not s.startswith("-"):
+            out.append(" ")
+        out.append(s)
+    return "".join(out)
+
+
+def _emit(p0, merged):
+    """Absolute M, then relative l/c segments off it.
+
+    Each absolute point is rounded to one decimal *before* differencing, so
+    rounding error cannot drift along a long path the way it would if the
+    deltas themselves were rounded. Consecutive segments of the same command
+    share one letter (`l1 2 3 4` is two linetos), which is why this counts
+    segments rather than letters when anyone needs a node count.
+    """
+    cx, cy = _r1(p0[0]), _r1(p0[1])
+    groups = []
+    for s in merged:
+        pts = [(_r1(x), _r1(y)) for x, y in s[1:]]
+        vals = [v for x, y in pts for v in (x - cx, y - cy)]
+        cmd = "l" if s[0] == "L" else "c"
+        if groups and groups[-1][0] == cmd:
+            groups[-1][1] += vals
+        else:
+            groups.append([cmd, vals])
+        cx, cy = pts[-1]
+    body = "".join(cmd + _join(vals) for cmd, vals in groups)
+    return "M" + _fmt(_r1(p0[0])) + " " + _fmt(_r1(p0[1])) + body + "z"
+
+
 def straighten(d, tol=DEFAULTS["straight_tol"]):
     out = []
     for sub in _parse(d):
@@ -661,10 +707,7 @@ def straighten(d, tol=DEFAULTS["straight_tol"]):
                     cur = merged[-1][-1]
                 merged.append(s)
                 dropped = []
-        f = lambda p: " ".join(("%.1f" % v).rstrip("0").rstrip(".") for v in p)
-        out.append("M" + f(p0) + " " + " ".join(
-            "L" + f(s[1]) if s[0] == "L" else "C%s %s %s" % (f(s[1]), f(s[2]), f(s[3]))
-            for s in merged) + " Z")
+        out.append(_emit(p0, merged))
     return " ".join(out)
 
 
@@ -849,8 +892,13 @@ def demo():
     lab[:, 10:14] = 1                                             # a line, 4 grid px
     out = smooth(lab, np.ones(lab.shape, bool), 2, 2, 2)
     assert (out[:, 10:14] == 1).all() and (out[2:-2, 28:30] == 0).all() and (out[2:-2, 30:32] == 1).all(), out[:4]
-    assert straighten("M0 0 L5 0 L10 0 Z").count("L") == 1        # straight run collapses
-    assert straighten("M0 0 L10 0 L10 10 L0 10 Z").count("L") == 3  # corners survive
+    # relative output: count numbers, not letters -- consecutive same-type
+    # segments share one command letter, so letter counts no longer equal
+    # segment counts (a straight run still collapses to one segment: 4
+    # numbers = M's pair + one l pair; three corners survive: 8 numbers)
+    nums = lambda s: len(re.findall(r"-?\d*\.?\d+", s))
+    assert nums(straighten("M0 0 L5 0 L10 0 Z")) == 4              # straight run collapses
+    assert nums(straighten("M0 0 L10 0 L10 10 L0 10 Z")) == 8      # corners survive
     # a 0.6 px line on a pixel edge leaves two columns holding a third of a
     # pixel of ink each: no threshold calls either one ink, coverage does
     from PIL import ImageDraw
@@ -876,6 +924,14 @@ def demo():
     trace("_demo.png", "_demo.svg", scale=2)
     d = open("_demo.svg").read()
     assert d.count("<path") == 1 and "#C81E1E" in d, d[:200]
+    path_d = re.search(r'<path[^>]*\sd="([^"]*)"', d).group(1)
+    assert not re.search(r"[LC]", path_d), path_d              # pure relative commands
+    try:
+        r = compare("_demo.png", "_demo.svg")
+    except ImportError:
+        pass
+    else:
+        assert r["mean"] < 0.5, r                               # same fidelity, fewer bytes
     # a left-to-right ramp in one flat-merged region beats its flat fill with a gradient
     ramp = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     for y in range(64):

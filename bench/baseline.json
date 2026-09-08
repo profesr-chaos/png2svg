@@ -1,353 +1,353 @@
 {
  "cat_face.png:trace": {
-  "mean": 2.264,
-  "over40": 0.656,
+  "mean": 2.265,
+  "over40": 0.66,
   "paths": 14,
-  "nodes": 24200,
-  "bytes": 524772,
-  "secs": 25.59,
-  "err_kb": 1160.24
+  "nodes": 24187,
+  "bytes": 340214,
+  "secs": 24.34,
+  "err_kb": 752.52
  },
  "cat_face.png:vtrace": {
   "mean": 3.683,
   "over40": 1.208,
   "paths": 389,
-  "nodes": 5506,
+  "nodes": 5323,
   "bytes": 296685,
   "secs": 0.18,
   "err_kb": 1067.08
  },
  "cat_face.png:rt": {
-  "mean": 0.646,
-  "over40": 0.301,
-  "paths": 14,
-  "nodes": 25791,
-  "bytes": 516435,
-  "secs": 24.44,
-  "err_kb": 325.8
+  "mean": 0.656,
+  "over40": 0.299,
+  "paths": 13,
+  "nodes": 31096,
+  "bytes": 417908,
+  "secs": 24.15,
+  "err_kb": 267.72
  },
  "cat_mascot.png:trace": {
-  "mean": 2.445,
-  "over40": 0.504,
+  "mean": 2.446,
+  "over40": 0.505,
   "paths": 24,
-  "nodes": 62662,
-  "bytes": 1297202,
-  "secs": 35.23,
-  "err_kb": 3097.32
+  "nodes": 62650,
+  "bytes": 832904,
+  "secs": 34.23,
+  "err_kb": 1989.53
  },
  "cat_mascot.png:vtrace": {
   "mean": 3.424,
   "over40": 1.461,
   "paths": 1031,
-  "nodes": 15054,
+  "nodes": 14650,
   "bytes": 754352,
-  "secs": 0.28,
+  "secs": 0.27,
   "err_kb": 2522.36
  },
  "cat_mascot.png:rt": {
-  "mean": 0.936,
-  "over40": 0.206,
+  "mean": 1.236,
+  "over40": 0.214,
   "paths": 20,
-  "nodes": 49853,
-  "bytes": 1001302,
-  "secs": 26.85,
-  "err_kb": 915.25
+  "nodes": 50710,
+  "bytes": 655735,
+  "secs": 25.58,
+  "err_kb": 791.49
  },
  "cat_sleeping.png:trace": {
-  "mean": 1.429,
-  "over40": 0.166,
+  "mean": 1.431,
+  "over40": 0.168,
   "paths": 12,
-  "nodes": 20549,
-  "bytes": 429603,
-  "secs": 21.28,
-  "err_kb": 599.51
+  "nodes": 20542,
+  "bytes": 279094,
+  "secs": 19.29,
+  "err_kb": 390.02
  },
  "cat_sleeping.png:vtrace": {
   "mean": 3.003,
   "over40": 1.367,
   "paths": 704,
-  "nodes": 9622,
+  "nodes": 9405,
   "bytes": 491439,
-  "secs": 0.24,
+  "secs": 0.22,
   "err_kb": 1441.2
  },
  "cat_sleeping.png:rt": {
-  "mean": 0.504,
-  "over40": 0.068,
-  "paths": 11,
-  "nodes": 20072,
-  "bytes": 427376,
-  "secs": 17.4,
-  "err_kb": 210.35
+  "mean": 0.432,
+  "over40": 0.066,
+  "paths": 12,
+  "nodes": 20247,
+  "bytes": 264807,
+  "secs": 18.19,
+  "err_kb": 111.72
  },
  "headphone_outline.png:trace": {
-  "mean": 1.588,
-  "over40": 0.639,
+  "mean": 1.593,
+  "over40": 0.643,
   "paths": 5,
-  "nodes": 1063,
-  "bytes": 21498,
-  "secs": 4.15,
-  "err_kb": 33.34
+  "nodes": 1060,
+  "bytes": 14697,
+  "secs": 3.75,
+  "err_kb": 22.86
  },
  "headphone_outline.png:vtrace": {
   "mean": 3.347,
   "over40": 2.045,
   "paths": 87,
-  "nodes": 1324,
+  "nodes": 1287,
   "bytes": 69771,
   "secs": 0.06,
   "err_kb": 228.05
  },
  "headphone_outline.png:rt": {
-  "mean": 0.314,
-  "over40": 0.085,
-  "paths": 6,
-  "nodes": 1714,
-  "bytes": 34188,
-  "secs": 4.28,
-  "err_kb": 10.48
+  "mean": 0.328,
+  "over40": 0.075,
+  "paths": 5,
+  "nodes": 1290,
+  "bytes": 17369,
+  "secs": 3.3,
+  "err_kb": 5.56
  },
  "headphones.png:trace": {
   "mean": 0.963,
-  "over40": 0.287,
+  "over40": 0.285,
   "paths": 8,
-  "nodes": 8763,
-  "bytes": 191286,
-  "secs": 13.77,
-  "err_kb": 179.89
+  "nodes": 8759,
+  "bytes": 124485,
+  "secs": 12.55,
+  "err_kb": 117.07
  },
  "headphones.png:vtrace": {
   "mean": 1.994,
   "over40": 1.419,
   "paths": 420,
-  "nodes": 6254,
+  "nodes": 5984,
   "bytes": 315934,
-  "secs": 0.17,
+  "secs": 0.16,
   "err_kb": 615.21
  },
  "headphones.png:rt": {
-  "mean": 0.221,
-  "over40": 0.008,
+  "mean": 0.217,
+  "over40": 0.006,
   "paths": 8,
-  "nodes": 10356,
-  "bytes": 209819,
-  "secs": 12.71,
-  "err_kb": 45.28
+  "nodes": 9521,
+  "bytes": 123255,
+  "secs": 11.74,
+  "err_kb": 26.12
  },
  "icon_headphones94.png:trace": {
-  "mean": 3.791,
-  "over40": 0.86,
+  "mean": 3.795,
+  "over40": 0.871,
   "paths": 15,
-  "nodes": 1254,
-  "bytes": 20167,
-  "secs": 0.44,
-  "err_kb": 74.66
+  "nodes": 1247,
+  "bytes": 15643,
+  "secs": 0.35,
+  "err_kb": 57.97
  },
  "icon_headphones94.png:vtrace": {
   "mean": 26.943,
   "over40": 15.799,
   "paths": 141,
-  "nodes": 922,
+  "nodes": 886,
   "bytes": 42937,
   "secs": 0.01,
   "err_kb": 1129.74
  },
  "icon_headphones94.png:rt": {
-  "mean": 3.321,
-  "over40": 0.373,
+  "mean": 3.231,
+  "over40": 0.328,
   "paths": 11,
-  "nodes": 1106,
-  "bytes": 18502,
-  "secs": 0.27,
-  "err_kb": 60.01
+  "nodes": 1037,
+  "bytes": 13244,
+  "secs": 0.25,
+  "err_kb": 41.79
  },
  "icon_pen94.png:trace": {
-  "mean": 3.404,
-  "over40": 1.279,
+  "mean": 3.397,
+  "over40": 1.29,
   "paths": 13,
-  "nodes": 1113,
-  "bytes": 18573,
-  "secs": 0.39,
-  "err_kb": 61.74
+  "nodes": 1109,
+  "bytes": 14365,
+  "secs": 0.33,
+  "err_kb": 47.65
  },
  "icon_pen94.png:vtrace": {
   "mean": 11.216,
   "over40": 7.424,
   "paths": 140,
-  "nodes": 636,
+  "nodes": 621,
   "bytes": 33853,
   "secs": 0.01,
   "err_kb": 370.8
  },
  "icon_pen94.png:rt": {
-  "mean": 2.372,
-  "over40": 0.86,
+  "mean": 2.425,
+  "over40": 1.143,
   "paths": 11,
-  "nodes": 1018,
-  "bytes": 18191,
-  "secs": 0.36,
-  "err_kb": 42.14
+  "nodes": 1054,
+  "bytes": 14857,
+  "secs": 0.28,
+  "err_kb": 35.18
  },
  "icon_pencil48.png:trace": {
-  "mean": 2.142,
-  "over40": 0.825,
+  "mean": 2.164,
+  "over40": 0.781,
   "paths": 9,
-  "nodes": 268,
-  "bytes": 4598,
-  "secs": 0.32,
-  "err_kb": 9.62
+  "nodes": 261,
+  "bytes": 3811,
+  "secs": 0.29,
+  "err_kb": 8.05
  },
  "icon_pencil48.png:vtrace": {
   "mean": 15.833,
   "over40": 10.026,
   "paths": 10,
-  "nodes": 106,
+  "nodes": 100,
   "bytes": 5349,
   "secs": 0.0,
   "err_kb": 82.71
  },
  "icon_pencil48.png:rt": {
-  "mean": 0.944,
-  "over40": 0.087,
+  "mean": 1.074,
+  "over40": 0.13,
   "paths": 9,
-  "nodes": 227,
-  "bytes": 3702,
-  "secs": 0.22,
-  "err_kb": 3.41
+  "nodes": 235,
+  "bytes": 3223,
+  "secs": 0.17,
+  "err_kb": 3.38
  },
  "mic_flat.png:trace": {
-  "mean": 0.542,
-  "over40": 0.075,
+  "mean": 0.541,
+  "over40": 0.073,
   "paths": 4,
-  "nodes": 722,
-  "bytes": 14089,
-  "secs": 7.49,
-  "err_kb": 7.46
+  "nodes": 720,
+  "bytes": 9654,
+  "secs": 6.89,
+  "err_kb": 5.1
  },
  "mic_flat.png:vtrace": {
   "mean": 1.465,
   "over40": 0.841,
   "paths": 21,
-  "nodes": 634,
+  "nodes": 629,
   "bytes": 44730,
-  "secs": 0.09,
+  "secs": 0.08,
   "err_kb": 63.99
  },
  "mic_flat.png:rt": {
-  "mean": 0.084,
+  "mean": 0.086,
   "over40": 0.002,
   "paths": 4,
-  "nodes": 845,
-  "bytes": 15880,
-  "secs": 6.68,
-  "err_kb": 1.3
+  "nodes": 855,
+  "bytes": 11214,
+  "secs": 6.11,
+  "err_kb": 0.94
  },
  "mic_small.png:trace": {
-  "mean": 0.409,
-  "over40": 0.139,
+  "mean": 0.408,
+  "over40": 0.137,
   "paths": 4,
-  "nodes": 1071,
-  "bytes": 22532,
-  "secs": 5.47,
-  "err_kb": 9.0
+  "nodes": 1069,
+  "bytes": 15140,
+  "secs": 4.65,
+  "err_kb": 6.03
  },
  "mic_small.png:vtrace": {
   "mean": 0.823,
   "over40": 0.532,
   "paths": 68,
-  "nodes": 1222,
+  "nodes": 1193,
   "bytes": 69894,
-  "secs": 0.08,
+  "secs": 0.07,
   "err_kb": 56.17
  },
  "mic_small.png:rt": {
-  "mean": 0.065,
-  "over40": 0.015,
+  "mean": 0.071,
+  "over40": 0.021,
   "paths": 4,
-  "nodes": 1140,
-  "bytes": 24335,
-  "secs": 4.33,
-  "err_kb": 1.54
+  "nodes": 1230,
+  "bytes": 17829,
+  "secs": 3.5,
+  "err_kb": 1.24
  },
  "pencil.png:trace": {
-  "mean": 0.602,
+  "mean": 0.603,
   "over40": 0.094,
   "paths": 17,
-  "nodes": 2858,
-  "bytes": 64967,
-  "secs": 20.2,
-  "err_kb": 38.19
+  "nodes": 2848,
+  "bytes": 45391,
+  "secs": 18.25,
+  "err_kb": 26.73
  },
  "pencil.png:vtrace": {
   "mean": 1.447,
   "over40": 0.653,
   "paths": 201,
-  "nodes": 4049,
+  "nodes": 3967,
   "bytes": 207511,
-  "secs": 0.12,
+  "secs": 0.11,
   "err_kb": 293.23
  },
  "pencil.png:rt": {
-  "mean": 1.581,
-  "over40": 0.023,
+  "mean": 1.582,
+  "over40": 0.028,
   "paths": 11,
-  "nodes": 1627,
-  "bytes": 36264,
-  "secs": 15.0,
-  "err_kb": 55.99
+  "nodes": 1590,
+  "bytes": 25829,
+  "secs": 13.58,
+  "err_kb": 39.9
  },
  "pencil_outline.png:trace": {
-  "mean": 1.385,
-  "over40": 0.685,
+  "mean": 1.387,
+  "over40": 0.69,
   "paths": 6,
-  "nodes": 867,
-  "bytes": 16971,
-  "secs": 3.92,
-  "err_kb": 22.95
+  "nodes": 863,
+  "bytes": 11917,
+  "secs": 3.47,
+  "err_kb": 16.14
  },
  "pencil_outline.png:vtrace": {
   "mean": 2.75,
   "over40": 1.793,
   "paths": 46,
-  "nodes": 830,
+  "nodes": 816,
   "bytes": 50016,
   "secs": 0.04,
   "err_kb": 134.32
  },
  "pencil_outline.png:rt": {
-  "mean": 0.337,
-  "over40": 0.223,
+  "mean": 0.341,
+  "over40": 0.214,
   "paths": 6,
-  "nodes": 1217,
-  "bytes": 23521,
-  "secs": 3.82,
-  "err_kb": 7.74
+  "nodes": 1439,
+  "bytes": 20116,
+  "secs": 3.36,
+  "err_kb": 6.7
  },
  "ui_toggles.png:trace": {
-  "mean": 2.238,
-  "over40": 1.671,
+  "mean": 2.222,
+  "over40": 1.686,
   "paths": 5,
   "nodes": 2018,
-  "bytes": 33324,
-  "secs": 0.5,
-  "err_kb": 72.83
+  "bytes": 23268,
+  "secs": 0.44,
+  "err_kb": 50.49
  },
  "ui_toggles.png:vtrace": {
   "mean": 7.582,
   "over40": 2.913,
   "paths": 15,
-  "nodes": 123,
+  "nodes": 116,
   "bytes": 5180,
   "secs": 0.0,
   "err_kb": 38.35
  },
  "ui_toggles.png:rt": {
-  "mean": 2.826,
-  "over40": 2.394,
-  "paths": 10,
-  "nodes": 3225,
-  "bytes": 57962,
-  "secs": 0.82,
-  "err_kb": 159.96
+  "mean": 2.523,
+  "over40": 2.182,
+  "paths": 9,
+  "nodes": 2998,
+  "bytes": 38553,
+  "secs": 0.66,
+  "err_kb": 94.99
  }
 }
