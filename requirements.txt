@@ -1,0 +1,5 @@
+potracer
+pillow
+numpy
+vtracer   # optional: fast Rust tracer
+cairosvg  # optional: scores the result against the source
