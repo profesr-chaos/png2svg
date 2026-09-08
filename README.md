@@ -19,3 +19,10 @@ Flat-colour PNG to SVG converter, with a small Tkinter front end.
 | `trace()` | default | One smooth vector layer per flat colour (potrace). Best fidelity. |
 | `vtrace()` | `--vtracer` | ~25x faster, more paths, more colour noise. |
 | `pixel_copy()` | `--exact` | One rectangle per run of equal pixels. Exact copy, no curves. |
+
+## Benchmark
+
+    python bench.py           # score bench/*.png, diff against bench/baseline.json
+    python bench.py --save    # accept the new numbers as the baseline
+
+A change to `png2svg.py` must move this table, or it does not go in.

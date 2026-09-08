@@ -26,10 +26,13 @@ from PIL import Image
 DEFAULTS = dict(
     scale=4,             # trace grid: 4x gives quarter-pixel edge placement
     min_share=0.01,      # drop colours below this share of the artwork
-    merge_dist=14,       # max-channel distance that still counts as one colour
+    merge_dist=10,       # Lab distance (delta E) that still counts as one colour
     smooth_passes=2,     # 3x3 majority votes over the labels
+    min_width=1.0,       # px: a band of a blended colour up to this wide is an
+                         # anti-aliasing transition, not a shape
     erode=1,             # px of the outer rim that stays single-layer
-    alphamax=1.0,        # potrace corner threshold (1.0 = smooth curves)
+    alphamax=0.5,        # potrace corner threshold: 1.0 rounds every corner,
+                         # 0.5 keeps the corners of flat artwork sharp
     opttolerance=0.6,
     turdsize=6,          # px^2: drop traced specks under this area
     straight_tol=0.1,    # px a node may move when a run collapses to one line
@@ -54,33 +57,59 @@ def _cfg(opts):
     return cfg
 
 
+_M = np.array([[0.4124, 0.3576, 0.1805], [0.2126, 0.7152, 0.0722], [0.0193, 0.1192, 0.9505]])
+_WHITE = _M.sum(1)
+
+
+def to_lab(rgb):
+    """sRGB 0-255 -> CIE Lab. A unit step here matches what the eye calls one."""
+    c = np.asarray(rgb, np.float32) / 255
+    c = np.where(c > 0.04045, ((c + 0.055) / 1.055) ** 2.4, c / 12.92)
+    xyz = c @ _M.T.astype(np.float32) / _WHITE.astype(np.float32)
+    f = np.where(xyz > 0.008856, np.cbrt(xyz), 7.787 * xyz + 16 / 116)
+    return np.stack([116 * f[..., 1] - 16, 500 * (f[..., 0] - f[..., 1]),
+                     200 * (f[..., 1] - f[..., 2])], -1)
+
+
+def nearest(lab_px, lab_pal):
+    """Index of the nearest palette colour for each pixel, in Lab."""
+    out = np.empty(len(lab_px), np.int16)
+    for i in range(0, len(lab_px), CHUNK):      # chunked: the 4x grid is big
+        d = lab_px[i:i + CHUNK, None, :] - lab_pal[None]
+        out[i:i + CHUNK] = (d * d).sum(2).argmin(1)
+    return out
+
+
 def palette(rgb, solid, cfg):
     """The flat colours, taken from the fully opaque pixels only."""
     from collections import Counter
     px = rgb[solid]
+    counts = Counter(map(tuple, px.tolist())).most_common()
+    cols = np.array([c for c, _ in counts])
+    n = np.array([k for _, k in counts])
+    lab = to_lab(cols)
     pal = []
-    for col, _ in Counter(map(tuple, px.tolist())).most_common():
-        c = np.array(col)
-        if all(np.abs(c - p).max() > cfg["merge_dist"] for p in pal):
-            pal.append(c)
-    pal = np.array(pal)
-    lab = np.abs(px[:, None, :] - pal[None]).sum(2).argmin(1)
-    keep = [i for i in range(len(pal)) if (lab == i).sum() / len(px) >= cfg["min_share"]]
+    for i in range(len(cols)):                  # greedy by frequency, merge in Lab
+        if not pal or ((lab[i] - lab[pal]) ** 2).sum(1).min() > cfg["merge_dist"] ** 2:
+            pal.append(i)
+    near = nearest(lab, lab[pal])
+    share = np.bincount(near, n, len(pal)) / n.sum()
+    keep = [p for p, sh in zip(pal, share) if sh >= cfg["min_share"]]
     if not keep:
         raise ValueError("no colour covers min_share of the image; lower it")
-    return pal[keep]
+    return cols[keep]
 
 
 def label_all(rgb, solid, inside, pal):
     """Label the solid pixels, then flood the anti-aliased rim from its neighbours."""
     lab = np.full(solid.shape, -1, np.int16)
-    px = rgb[solid].astype(np.int32)
-    near = np.empty(len(px), np.int16)
-    for i in range(0, len(px), CHUNK):          # chunked: the 4x grid is big
-        c = px[i:i + CHUNK]
-        near[i:i + CHUNK] = np.abs(c[:, None, :] - pal[None]).sum(2).argmin(1)
-    lab[solid] = near
+    lab[solid] = nearest(to_lab(rgb[solid]), to_lab(pal))
     lab[~inside] = -1
+    return _flood(lab, inside)
+
+
+def _flood(lab, inside):
+    """Give every unlabelled pixel inside the shape the label of a neighbour."""
     while (todo := inside & (lab < 0)).any():
         grown = lab.copy()
         for dy, dx in NEIGHBOURS:
@@ -92,6 +121,58 @@ def label_all(rgb, solid, inside, pal):
             break
         lab = grown
     return lab
+
+
+def _runs(lab):
+    """Per pixel: the shorter of its horizontal and vertical run of equal labels."""
+    out = np.full(lab.shape, np.iinfo(np.int32).max, np.int32)
+    for axis in (0, 1):
+        a = lab if axis == 1 else lab.T
+        cut = np.ones(a.shape, bool)
+        cut[:, 1:] = a[:, 1:] != a[:, :-1]           # a run starts at every cut
+        rid = np.cumsum(cut.ravel())                  # run id, unique across rows
+        length = np.bincount(rid)[rid].reshape(a.shape)
+        out = np.minimum(out, length if axis == 1 else length.T)
+    return out
+
+
+def thin(lab, rgb, inside, pal, width, tol):
+    """Relabel the anti-aliasing bands that landed on a third colour.
+
+    Two flat fills that meet get a one-pixel band of blended colour between
+    them. When that blend matches a real palette colour, the band is labelled
+    as one and traces as hundreds of slivers. A pixel is a band pixel if its
+    run of equal labels is short in both directions AND its own colour sits on
+    the line between the two colours that surround it. A real thin stroke
+    fails the second test, so it survives.
+    """
+    w = int(round(width))
+    cand = inside & (_runs(lab) <= w)
+    if not cand.any():
+        return lab
+    surv = lab.copy()
+    surv[cand] = -1
+    ys, xs = np.nonzero(cand)
+    h, wd = lab.shape
+    n = len(pal)
+    count = np.zeros((len(ys), n), np.int16)      # labels seen around each candidate
+    for r in range(1, w + 2):
+        for dy, dx in ((r, 0), (-r, 0), (0, r), (0, -r), (r, r), (r, -r), (-r, r), (-r, -r)):
+            l = surv[np.clip(ys + dy, 0, h - 1), np.clip(xs + dx, 0, wd - 1)]
+            ok = l >= 0
+            count[np.nonzero(ok)[0], l[ok]] += 1
+    top = np.argsort(-count, axis=1)[:, :2]
+    a, b = top[:, 0], top[:, 1]
+    has2 = (count[np.arange(len(ys)), b] > 0) & (a != b)
+    p = rgb[ys, xs].astype(np.float32)
+    pa, pb = pal[a].astype(np.float32), pal[b].astype(np.float32)
+    v = pb - pa
+    t = ((p - pa) * v).sum(1) / np.maximum((v * v).sum(1), 1e-6)
+    resid = np.abs(p - (pa + t[:, None] * v)).max(1)
+    blend = has2 & (t > 0.05) & (t < 0.95) & (resid <= tol)
+    new = lab.copy()
+    new[ys[blend], xs[blend]] = np.where(t[blend] < 0.5, a[blend], b[blend])
+    return new
 
 
 def smooth(lab, inside, n_colours, passes):
@@ -278,16 +359,18 @@ def straighten(d, tol=DEFAULTS["straight_tol"]):
             else:
                 flat.append(s)
             cur = s[-1]
-        merged, cur = [], p0
+        merged, cur, dropped = [], p0, []
         for s in flat:                          # drop the joints inside a straight run
             if (s[0] == "L" and merged and merged[-1][0] == "L"
-                    and _dist(merged[-1][1], cur, s[1]) <= tol):
+                    and all(_dist(q, cur, s[1]) <= tol for q in dropped + [merged[-1][1]])):
+                dropped.append(merged[-1][1])   # every dropped joint must stay near the chord
                 merged[-1] = ("L", s[1])
             else:
                 if merged:
                     cur = merged[-1][-1]
                 merged.append(s)
-        f = lambda p: "%.2f %.2f" % p
+                dropped = []
+        f = lambda p: " ".join(("%.1f" % v).rstrip("0").rstrip(".") for v in p)
         out.append("M" + f(p0) + " " + " ".join(
             "L" + f(s[1]) if s[0] == "L" else "C%s %s %s" % (f(s[1]), f(s[2]), f(s[3]))
             for s in merged) + " Z")
@@ -320,6 +403,8 @@ def trace(src, out, progress=None, **opts):
 
     say("label pixels")
     lab = smooth(label_all(rgb, solid, inside, pal), inside, len(pal), cfg["smooth_passes"])
+    lab = thin(lab, rgb, inside, pal, cfg["min_width"] * cfg["scale"], cfg["merge_dist"])
+    lab = smooth(lab, inside, len(pal), cfg["smooth_passes"])
 
     core = lab >= 0                             # silhouette minus its outer rim
     for _ in range(cfg["erode"] * cfg["scale"]):
@@ -419,6 +504,15 @@ def compare(src, svg_path):
 
 
 def demo():
+    # a 3px band of blend colour between two fills is relabelled; a stroke is not
+    pal = np.array([[0, 0, 0], [200, 200, 200], [100, 100, 100], [255, 0, 0]])
+    lab = np.zeros((20, 40), np.int16)
+    lab[:, 20:] = 1
+    lab[:, 19:22] = 2                                             # the band
+    lab[:, 5:8] = 3                                               # a red stroke on black
+    rgb = pal[lab]
+    out = thin(lab, rgb, np.ones(lab.shape, bool), pal, 4, 14)
+    assert not (out == 2).any() and (out == 3).sum() == 60, out[10]
     assert straighten("M0 0 L5 0 L10 0 Z").count("L") == 1        # straight run collapses
     assert straighten("M0 0 L10 0 L10 10 L0 10 Z").count("L") == 3  # corners survive
     im = Image.new("RGBA", (64, 64), (0, 0, 0, 0))                # red square on nothing
