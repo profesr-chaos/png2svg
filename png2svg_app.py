@@ -33,6 +33,7 @@ class App(ttk.Frame):
         self.mode = tk.StringVar(value="trace")
         self.merge = tk.IntVar(value=png2svg.DEFAULTS["merge_dist"])
         self.share = tk.DoubleVar(value=png2svg.DEFAULTS["min_share"] * 100)
+        self.soft = tk.DoubleVar(value=png2svg.DEFAULTS["min_width"])
         self.scale = tk.IntVar(value=png2svg.DEFAULTS["scale"])
         self.passes = tk.IntVar(value=png2svg.DEFAULTS["smooth_passes"])
         self.ld = tk.IntVar(value=png2svg.VTRACER["layer_difference"])
@@ -67,8 +68,10 @@ class App(ttk.Frame):
         self.opts.columnconfigure(1, weight=1)
         self._spin("Colour distance", self.merge, 2, 60, 0,
                    "how far apart two colours must be to stay separate")
-        self._spin("Smallest region %", self.share, 0.05, 20, 1,
-                   "drop colours below this share of the artwork", inc=0.25)
+        self._spin("Smallest region %", self.share, 0.01, 20, 1,
+                   "drop colours below this share of the artwork", inc=0.05)
+        self._spin("Edge softness px", self.soft, 0, 6, 4,
+                   "width of the blended band along a soft edge", inc=0.5)
         self._spin("Trace grid", self.scale, 1, 8, 2,
                    "4 puts edges on a quarter pixel; 1 is fastest")
         self._spin("Speckle passes", self.passes, 0, 6, 3,
@@ -167,8 +170,8 @@ class App(ttk.Frame):
                        filter_speckle=self.fs.get(), path_precision=self.pp.get())
         else:
             job = dict(mode=mode, merge_dist=self.merge.get(),
-                       min_share=self.share.get() / 100, scale=self.scale.get(),
-                       smooth_passes=self.passes.get())
+                       min_share=self.share.get() / 100, min_width=self.soft.get(),
+                       scale=self.scale.get(), smooth_passes=self.passes.get())
         self.busy = True
         self.go.configure(state="disabled")
         self.bar.start(12)
