@@ -1,11 +1,11 @@
 {
  "cat_face.png:trace": {
-  "mean": 3.405,
-  "over40": 1.175,
+  "mean": 3.41,
+  "over40": 1.182,
   "paths": 9,
-  "nodes": 35752,
-  "bytes": 1321311,
-  "secs": 8.91
+  "nodes": 44431,
+  "bytes": 1118922,
+  "secs": 8.94
  },
  "cat_face.png:vtrace": {
   "mean": 3.683,
@@ -16,12 +16,12 @@
   "secs": 0.18
  },
  "cat_mascot.png:trace": {
-  "mean": 3.433,
-  "over40": 1.681,
+  "mean": 3.434,
+  "over40": 1.682,
   "paths": 17,
-  "nodes": 100129,
-  "bytes": 3689556,
-  "secs": 11.47
+  "nodes": 132086,
+  "bytes": 3259107,
+  "secs": 11.61
  },
  "cat_mascot.png:vtrace": {
   "mean": 3.424,
@@ -32,11 +32,11 @@
   "secs": 0.26
  },
  "headphone_outline.png:trace": {
-  "mean": 1.778,
-  "over40": 0.993,
+  "mean": 1.802,
+  "over40": 1.027,
   "paths": 7,
-  "nodes": 6010,
-  "bytes": 220555,
+  "nodes": 7993,
+  "bytes": 179894,
   "secs": 2.0
  },
  "headphone_outline.png:vtrace": {
@@ -48,12 +48,12 @@
   "secs": 0.06
  },
  "headphones.png:trace": {
-  "mean": 1.174,
-  "over40": 0.362,
+  "mean": 1.179,
+  "over40": 0.369,
   "paths": 5,
-  "nodes": 6178,
-  "bytes": 210285,
-  "secs": 4.86
+  "nodes": 7115,
+  "bytes": 184950,
+  "secs": 4.85
  },
  "headphones.png:vtrace": {
   "mean": 1.994,
@@ -64,12 +64,12 @@
   "secs": 0.17
  },
  "icon_headphones94.png:trace": {
-  "mean": 4.873,
-  "over40": 2.716,
+  "mean": 4.803,
+  "over40": 2.58,
   "paths": 24,
-  "nodes": 3676,
-  "bytes": 113870,
-  "secs": 0.4
+  "nodes": 4809,
+  "bytes": 103579,
+  "secs": 0.42
  },
  "icon_headphones94.png:vtrace": {
   "mean": 26.943,
@@ -80,12 +80,12 @@
   "secs": 0.01
  },
  "icon_pen94.png:trace": {
-  "mean": 4.085,
-  "over40": 2.377,
+  "mean": 4.101,
+  "over40": 2.399,
   "paths": 21,
-  "nodes": 2128,
-  "bytes": 68178,
-  "secs": 0.36
+  "nodes": 2859,
+  "bytes": 60550,
+  "secs": 0.35
  },
  "icon_pen94.png:vtrace": {
   "mean": 11.216,
@@ -96,12 +96,12 @@
   "secs": 0.01
  },
  "icon_pencil48.png:trace": {
-  "mean": 2.793,
-  "over40": 1.91,
+  "mean": 2.521,
+  "over40": 1.866,
   "paths": 15,
-  "nodes": 377,
-  "bytes": 11339,
-  "secs": 0.25
+  "nodes": 480,
+  "bytes": 9962,
+  "secs": 0.28
  },
  "icon_pencil48.png:vtrace": {
   "mean": 15.833,
@@ -112,11 +112,11 @@
   "secs": 0.0
  },
  "mic_flat.png:trace": {
-  "mean": 0.74,
-  "over40": 0.084,
+  "mean": 0.737,
+  "over40": 0.086,
   "paths": 5,
-  "nodes": 2546,
-  "bytes": 93643,
+  "nodes": 3319,
+  "bytes": 76917,
   "secs": 4.06
  },
  "mic_flat.png:vtrace": {
@@ -125,15 +125,15 @@
   "paths": 21,
   "nodes": 634,
   "bytes": 44730,
-  "secs": 0.09
+  "secs": 0.08
  },
  "mic_small.png:trace": {
-  "mean": 0.378,
-  "over40": 0.103,
+  "mean": 0.383,
+  "over40": 0.112,
   "paths": 5,
-  "nodes": 1701,
-  "bytes": 65075,
-  "secs": 2.43
+  "nodes": 2568,
+  "bytes": 63996,
+  "secs": 2.45
  },
  "mic_small.png:vtrace": {
   "mean": 0.823,
@@ -144,11 +144,11 @@
   "secs": 0.07
  },
  "pencil.png:trace": {
-  "mean": 0.605,
-  "over40": 0.044,
+  "mean": 0.604,
+  "over40": 0.039,
   "paths": 10,
-  "nodes": 1702,
-  "bytes": 59621,
+  "nodes": 1933,
+  "bytes": 52366,
   "secs": 4.57
  },
  "pencil.png:vtrace": {
@@ -160,12 +160,12 @@
   "secs": 0.12
  },
  "pencil_outline.png:trace": {
-  "mean": 1.358,
-  "over40": 0.655,
+  "mean": 1.359,
+  "over40": 0.649,
   "paths": 6,
-  "nodes": 806,
-  "bytes": 25611,
-  "secs": 1.4
+  "nodes": 992,
+  "bytes": 23572,
+  "secs": 1.41
  },
  "pencil_outline.png:vtrace": {
   "mean": 2.75,
@@ -176,11 +176,11 @@
   "secs": 0.04
  },
  "ui_toggles.png:trace": {
-  "mean": 2.793,
-  "over40": 2.523,
+  "mean": 2.475,
+  "over40": 2.227,
   "paths": 4,
-  "nodes": 1226,
-  "bytes": 41470,
+  "nodes": 1807,
+  "bytes": 35212,
   "secs": 0.23
  },
  "ui_toggles.png:vtrace": {

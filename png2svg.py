@@ -31,7 +31,8 @@ DEFAULTS = dict(
     min_width=1.0,       # px: a band of a blended colour up to this wide is an
                          # anti-aliasing transition, not a shape
     erode=1,             # px of the outer rim that stays single-layer
-    alphamax=1.0,        # potrace corner threshold (1.0 = smooth curves)
+    alphamax=0.5,        # potrace corner threshold: 1.0 rounds every corner,
+                         # 0.5 keeps the corners of flat artwork sharp
     opttolerance=0.6,
     turdsize=6,          # px^2: drop traced specks under this area
     straight_tol=0.1,    # px a node may move when a run collapses to one line
