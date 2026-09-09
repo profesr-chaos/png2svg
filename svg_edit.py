@@ -13,6 +13,7 @@ import re
 _PATH = re.compile(r"<path\b[^>]*/>")
 _FILL = re.compile(r'fill="([^"]*)"')
 _VIS = re.compile(r'\s*visibility="hidden"')
+_STROKE = re.compile(r'\s*stroke(?:-width)?="[^"]*"')
 _GRADIENT = re.compile(r'<linearGradient\s+id="([^"]+)"[^>]*>.*?</linearGradient>', re.S)
 _STOP0 = re.compile(r'<stop\s+offset="0"[^>]*?stop-color="([^"]+)"')
 
@@ -103,6 +104,24 @@ def hide_set(svg, keys):
     return svg
 
 
+def highlight(svg, key):
+    """Preview-only isolation of one colour: every other path's fill becomes a
+    flat "#DDDDDD" (its shape still there, just uncoloured); `key`'s own paths
+    keep their fill and gain a 1px magenta stroke so a thin region still shows.
+    No path is added, removed, or resized. Never call this on text that gets
+    saved.
+    """
+    def sub(m):
+        tag = m.group(0)
+        fm = _FILL.search(tag)
+        if fm and fm.group(1) == key:
+            return _STROKE.sub("", tag)[:-2] + ' stroke="#FF00FF" stroke-width="1"/>'
+        if fm:
+            return _FILL.sub('fill="#DDDDDD"', tag, count=1)
+        return tag
+    return _PATH.sub(sub, svg)
+
+
 class Edited:
     """An SVG's text plus one level of undo over edits made to it."""
 
@@ -158,6 +177,14 @@ def _selfcheck():
     assert '<path fill="#00FF00" d="M1 1Z" visibility="hidden"/>' not in hidden
     shown = set_hidden(hidden, "#FF0000", False)
     assert 'visibility="hidden"' not in shown and shown == svg
+
+    # highlight: everything but the target goes flat grey, the target keeps its
+    # fill and gains a stroke, nothing is added or removed
+    lit = highlight(svg, "#FF0000")
+    assert lit.count('fill="#DDDDDD"') == 3          # 00FF00 x2 + url(#g0) x1
+    assert lit.count('stroke="#FF00FF"') == 2 and lit.count("<path") == svg.count("<path")
+    assert 'fill="#FF0000"' in lit and 'fill="#DDDDDD"' not in re.search(
+        r'<path fill="#FF0000"[^>]*/>', lit).group(0)
 
     # undo restores the text from before the last edit, one level
     ed = Edited(svg)

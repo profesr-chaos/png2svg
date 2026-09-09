@@ -33,14 +33,17 @@ class App(ttk.Frame):
         self.edited = None              # svg_edit.Edited over the traced SVG's text
         self.palette = {}                # fill key -> swatch hex, from svg_edit.list_colours
         self.swatch_widgets = {}         # fill key -> its swatch Label, for highlighting
+        self.swatch_rows = {}            # fill key -> its row Frame, to scroll to it
         self.hidden = set()              # fill keys hidden in the preview only
-        self.selected = None             # fill key last clicked
+        # the selected swatch: sunken in the list, isolated (svg_edit.highlight) in the
+        # preview, and the target of Merge into.../Recolour... once one is picked
+        self.selected = None
         self.merge_armed = False
         self.merge_source = None
         self.src_img = None              # PIL image, source flattened over white
         self.render_img = None           # PIL image, last rendered preview
         self.center = None               # (x, y) in source-image pixels the compare view centres on
-        self.cmp_zoom = tk.IntVar(value=1)
+        self.cmp_zoom = tk.StringVar(value="Fit")   # "Fit" or "1".."8"
 
         self.src = tk.StringVar()
         self.out = tk.StringVar()
@@ -131,19 +134,24 @@ class App(ttk.Frame):
         self._build_compare(work)
 
     def _build_palette(self, parent):
-        """The swatch list: click to recolour, Merge into/Undo/Save alongside it."""
+        """The swatch list: click to isolate, double-click (or Recolour...) to pick a colour."""
         pal = ttk.LabelFrame(parent, text="Palette", padding=6)
         pal.grid(row=0, column=0, sticky="ns")
 
         bar = ttk.Frame(pal)
         bar.pack(fill="x")
-        ttk.Button(bar, text="Merge into...", command=self.start_merge).pack(side="left")
-        ttk.Button(bar, text="Undo", command=self.do_undo).pack(side="left", padx=(4, 0))
-        ttk.Button(bar, text="Save", command=self.do_save).pack(side="left", padx=(4, 0))
-        ttk.Button(bar, text="Save as...", command=self.do_save_as).pack(side="left", padx=(4, 0))
+        ttk.Button(bar, text="Recolour...", command=self.start_recolour).pack(side="left")
+        ttk.Button(bar, text="Merge into...", command=self.start_merge).pack(side="left", padx=(4, 0))
+        ttk.Button(bar, text="All", command=self.show_all).pack(side="left", padx=(4, 0))
+        bar2 = ttk.Frame(pal)
+        bar2.pack(fill="x", pady=(2, 0))
+        ttk.Button(bar2, text="Undo", command=self.do_undo).pack(side="left")
+        ttk.Button(bar2, text="Save", command=self.do_save).pack(side="left", padx=(4, 0))
+        ttk.Button(bar2, text="Save as...", command=self.do_save_as).pack(side="left", padx=(4, 0))
 
         canvas = tk.Canvas(pal, width=230, height=CMP_VIEW, highlightthickness=0)
         vsb = ttk.Scrollbar(pal, orient="vertical", command=canvas.yview)
+        self.palette_canvas = canvas
         self.palette_inner = ttk.Frame(canvas)
         self.palette_inner.bind(
             "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
@@ -153,14 +161,15 @@ class App(ttk.Frame):
         vsb.pack(side="left", fill="y", pady=(6, 0))
 
     def _build_compare(self, parent):
-        """Source and result, zoomable, click either to recentre both."""
+        """Source and result, zoomable, click either to recentre both (or read a colour)."""
         box = ttk.LabelFrame(parent, text="Compare (source | result)", padding=6)
         box.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
 
         zrow = ttk.Frame(box)
         zrow.pack(fill="x")
         ttk.Label(zrow, text="Zoom").pack(side="left")
-        ttk.Spinbox(zrow, from_=1, to=8, textvariable=self.cmp_zoom, width=4).pack(
+        ttk.Spinbox(zrow, values=("Fit", "1", "2", "3", "4", "5", "6", "7", "8"),
+                   textvariable=self.cmp_zoom, width=5, state="readonly").pack(
             side="left", padx=6)
 
         imgs = ttk.Frame(box)
@@ -171,9 +180,13 @@ class App(ttk.Frame):
         self.out_canvas = tk.Canvas(imgs, width=CMP_VIEW, height=CMP_VIEW,
                                     background="#ccc", highlightthickness=1)
         self.out_canvas.grid(row=0, column=1, padx=4)
-        self.src_canvas.bind("<Button-1>", self.on_compare_click)
-        self.out_canvas.bind("<Button-1>", self.on_compare_click)
+        self.src_canvas.bind("<Button-1>", lambda e: self.on_compare_click(e, "src"))
+        self.out_canvas.bind("<Button-1>", lambda e: self.on_compare_click(e, "out"))
         self.cmp_zoom.trace_add("write", lambda *a: self.redraw_compare())
+
+        ttk.Label(box, foreground="#777", text="Click centres the view; at Fit, or with "
+                 "Ctrl held, click reads a colour into the palette instead.").pack(
+            anchor="w", pady=(4, 0))
 
     def _spin(self, text, var, lo, hi, row, hint, inc=1, box=None):
         box = box or self.opts
@@ -272,6 +285,8 @@ class App(ttk.Frame):
                     path, text = payload
                     self.edited = svg_edit.Edited(text)
                     self.hidden, self.selected, self.merge_armed = set(), None, False
+                    self.center = None
+                    self.cmp_zoom.set("Fit")
                     self.rebuild_palette()
                     self.render_current()
                 elif kind == "done":
@@ -299,7 +314,7 @@ class App(ttk.Frame):
     def rebuild_palette(self):
         for w in self.palette_inner.winfo_children():
             w.destroy()
-        self.palette, self.swatch_widgets = {}, {}
+        self.palette, self.swatch_widgets, self.swatch_rows = {}, {}, {}
         if not self.edited:
             return
         for i, (key, hexval) in enumerate(svg_edit.list_colours(self.edited.text)):
@@ -310,6 +325,7 @@ class App(ttk.Frame):
                               borderwidth=2, cursor="hand2")
             swatch.grid(row=0, column=0)
             swatch.bind("<Button-1>", lambda e, k=key: self.swatch_click(k))
+            swatch.bind("<Double-Button-1>", lambda e, k=key: self.swatch_recolour(k))
             ttk.Label(row, text=key if key.startswith("url(") else hexval,
                      width=12).grid(row=0, column=1, padx=4)
             hidden_var = tk.BooleanVar(value=key in self.hidden)
@@ -317,6 +333,7 @@ class App(ttk.Frame):
                            command=lambda k=key, v=hidden_var: self.toggle_hidden(k, v)
                            ).grid(row=0, column=2)
             self.swatch_widgets[key] = swatch
+            self.swatch_rows[key] = row
         self.highlight_rows()
 
     def highlight_rows(self):
@@ -324,24 +341,36 @@ class App(ttk.Frame):
             w.configure(relief="sunken" if key == self.selected else "raised")
 
     def swatch_click(self, key):
-        self.selected = key
-        self.highlight_rows()
+        """A single click selects/deselects a swatch, isolating it in the preview.
+        Recolouring moved to a double-click or the Recolour... button."""
         if self.merge_armed:
             self.merge_armed = False
             if key != self.merge_source:
                 self.edited.apply(svg_edit.merge, self.merge_source, key)
                 self.say("Merged %s into %s." % (self.merge_source, key))
+                self.selected = None
                 self.rebuild_palette()
                 self.render_current()
             return
+        self.selected = None if key == self.selected else key
+        self.highlight_rows()
+        self.render_current()
+
+    def swatch_recolour(self, key):
         seed = self.palette.get(key, "#ffffff")
         _, hexval = colorchooser.askcolor(color=seed, title="Recolour")
         if not hexval:
             return
         self.edited.apply(svg_edit.recolour, key, hexval.upper())
+        self.selected = None
         self.say("Recoloured %s to %s." % (key, hexval.upper()))
         self.rebuild_palette()
         self.render_current()
+
+    def start_recolour(self):
+        if not self.selected:
+            return self.say("Click a swatch first, then Recolour...")
+        self.swatch_recolour(self.selected)
 
     def start_merge(self):
         if not self.selected:
@@ -349,6 +378,12 @@ class App(ttk.Frame):
         self.merge_armed = True
         self.merge_source = self.selected
         self.say("Click the colour to merge %s into." % self.selected)
+
+    def show_all(self):
+        """Drop the isolated-swatch preview and show every layer again."""
+        self.selected = None
+        self.highlight_rows()
+        self.render_current()
 
     def toggle_hidden(self, key, var):
         (self.hidden.add if var.get() else self.hidden.discard)(key)
@@ -358,6 +393,7 @@ class App(ttk.Frame):
         if not self.edited:
             return
         self.edited.undo()
+        self.selected = None                      # the undone keys may no longer exist
         self.rebuild_palette()
         self.render_current()
         self.say("Undid last edit.")
@@ -382,12 +418,16 @@ class App(ttk.Frame):
     # --- compare view ---
 
     def render_current(self):
-        """Re-render the edited SVG (with hidden layers applied) for the preview only."""
+        """Re-render the SVG for the preview only: the selected swatch isolated
+        (svg_edit.highlight), or otherwise the normal layers minus any hidden ones."""
         if not self.edited:
             return
-        text = self.edited.text
-        if self.hidden:
-            text = svg_edit.hide_set(text, self.hidden)
+        if self.selected:
+            text = svg_edit.highlight(self.edited.text, self.selected)
+        else:
+            text = self.edited.text
+            if self.hidden:
+                text = svg_edit.hide_set(text, self.hidden)
         try:
             import cairosvg
         except ImportError:
@@ -405,31 +445,88 @@ class App(ttk.Frame):
         self.render_img = flat.convert("RGB")
         self.redraw_compare()
 
-    def _crop_box(self, size):
-        """The (x0, y0, x1, y1) source-pixel box the compare view currently shows."""
+    def _zoom_level(self):
+        """0 for Fit, else the spinbox's 1..8."""
+        v = self.cmp_zoom.get()
+        return 0 if v == "Fit" else int(v)
+
+    def _view_geometry(self, size):
+        """The (x0, y0, x1, y1) source-pixel box the compare view shows, and the
+        scale (displayed px per source px) it's drawn at. At Fit that's the whole
+        image, scaled to fit the canvas; otherwise a CMP_VIEW/zoom window centred
+        on self.center."""
         w, h = size
+        z = self._zoom_level()
+        if z == 0:
+            return 0, 0, w, h, min(CMP_VIEW / w, CMP_VIEW / h)
         if self.center is None:
             self.center = (w / 2, h / 2)
-        z = max(1, min(8, self.cmp_zoom.get()))
         view = CMP_VIEW / z
         x0 = min(max(self.center[0] - view / 2, 0), max(0, w - view))
         y0 = min(max(self.center[1] - view / 2, 0), max(0, h - view))
         return x0, y0, min(w, x0 + view), min(h, y0 + view), z
 
-    def on_compare_click(self, event):
+    def on_compare_click(self, event, which):
+        """A plain click centres both views; at Fit (nothing to centre) or with
+        Ctrl held, it is an eyedropper instead: pick the swatch nearest the
+        clicked pixel."""
         if self.src_img is None:
             return
-        x0, y0, _, _, z = self._crop_box(self.src_img.size)
-        self.center = (x0 + event.x / z, y0 + event.y / z)
+        x0, y0, _, _, scale = self._view_geometry(self.src_img.size)
+        px, py = x0 + event.x / scale, y0 + event.y / scale
+        eyedrop = self._zoom_level() == 0 or bool(event.state & 0x4)   # 0x4 = Control
+        if eyedrop:
+            img = self.src_img if which == "src" else self.render_img
+            if img is None:
+                return
+            x = min(max(int(px), 0), img.width - 1)
+            y = min(max(int(py), 0), img.height - 1)
+            self.pick_swatch_near(img.getpixel((x, y)))
+            return
+        self.center = (px, py)
         self.redraw_compare()
+
+    def pick_swatch_near(self, rgb):
+        """Select the palette swatch closest to `rgb`: an exact match first, else
+        the nearest by max-channel distance. A gradient swatch only counts if its
+        first stop is within 8 of `rgb` - it stands for a whole gradient, not one
+        colour, so a loose match to it would be misleading."""
+        best_key, best_d = None, None
+        for key, hexval in self.palette.items():
+            c = tuple(int(hexval[i:i + 2], 16) for i in (1, 3, 5))
+            d = max(abs(a - b) for a, b in zip(rgb[:3], c))
+            if key.startswith("url(#") and d > 8:
+                continue
+            if d == 0:
+                best_key, best_d = key, 0
+                break
+            if best_d is None or d < best_d:
+                best_key, best_d = key, d
+        if best_key is None:
+            return
+        self.selected = best_key
+        self.highlight_rows()
+        self.scroll_to(best_key)
+        self.render_current()
+
+    def scroll_to(self, key):
+        row = self.swatch_rows.get(key)
+        if not row:
+            return
+        self.palette_canvas.update_idletasks()
+        bbox = self.palette_canvas.bbox("all")
+        if not bbox or bbox[3] <= bbox[1]:
+            return
+        self.palette_canvas.yview_moveto((row.winfo_y() - bbox[1]) / (bbox[3] - bbox[1]))
 
     def redraw_compare(self):
         if self.src_img is None:
             self.src_canvas.delete("all")
             self.out_canvas.delete("all")
             return
-        x0, y0, x1, y1, z = self._crop_box(self.src_img.size)
-        box = (int(x0), int(y0), max(int(x0) + 1, int(x1)), max(int(y0) + 1, int(y1)))
+        x0, y0, x1, y1, scale = self._view_geometry(self.src_img.size)
+        box = (int(x0), int(y0), max(int(x0) + 1, round(x1)), max(int(y0) + 1, round(y1)))
+        resample = Image.NEAREST if scale >= 1 else Image.LANCZOS
         for img, canvas, attr in ((self.src_img, self.src_canvas, "_src_photo"),
                                   (self.render_img, self.out_canvas, "_out_photo")):
             canvas.delete("all")
@@ -437,8 +534,8 @@ class App(ttk.Frame):
                 canvas.create_text(CMP_VIEW // 2, CMP_VIEW // 2, text="(needs cairosvg)")
                 continue
             crop = img.crop(box)
-            disp = crop.resize((max(1, round(crop.width * z)), max(1, round(crop.height * z))),
-                               Image.NEAREST)
+            disp = crop.resize((max(1, round(crop.width * scale)),
+                                max(1, round(crop.height * scale))), resample)
             photo = ImageTk.PhotoImage(disp)
             setattr(self, attr, photo)            # keep a ref, else Tk drops the image
             canvas.create_image(0, 0, anchor="nw", image=photo)
