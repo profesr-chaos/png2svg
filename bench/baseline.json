@@ -1,12 +1,12 @@
 {
  "cat_face.png:trace": {
-  "mean": 2.265,
-  "over40": 0.66,
+  "mean": 2.006,
+  "over40": 0.232,
   "paths": 14,
-  "nodes": 24187,
-  "bytes": 340214,
-  "secs": 24.34,
-  "err_kb": 752.52
+  "nodes": 11050,
+  "bytes": 150846,
+  "secs": 24.85,
+  "err_kb": 295.5
  },
  "cat_face.png:vtrace": {
   "mean": 3.683,
@@ -14,26 +14,26 @@
   "paths": 389,
   "nodes": 5323,
   "bytes": 296685,
-  "secs": 0.18,
+  "secs": 0.17,
   "err_kb": 1067.08
  },
  "cat_face.png:rt": {
-  "mean": 0.656,
-  "over40": 0.299,
+  "mean": 0.441,
+  "over40": 0.079,
   "paths": 13,
-  "nodes": 31096,
-  "bytes": 417908,
-  "secs": 24.15,
-  "err_kb": 267.72
+  "nodes": 6342,
+  "bytes": 85218,
+  "secs": 23.2,
+  "err_kb": 36.7
  },
  "cat_mascot.png:trace": {
-  "mean": 2.446,
-  "over40": 0.505,
+  "mean": 2.147,
+  "over40": 0.235,
   "paths": 24,
-  "nodes": 62650,
-  "bytes": 832904,
-  "secs": 34.23,
-  "err_kb": 1989.53
+  "nodes": 18819,
+  "bytes": 249755,
+  "secs": 35.42,
+  "err_kb": 523.66
  },
  "cat_mascot.png:vtrace": {
   "mean": 3.424,
@@ -41,26 +41,26 @@
   "paths": 1031,
   "nodes": 14650,
   "bytes": 754352,
-  "secs": 0.27,
+  "secs": 0.25,
   "err_kb": 2522.36
  },
  "cat_mascot.png:rt": {
-  "mean": 1.236,
-  "over40": 0.214,
-  "paths": 20,
-  "nodes": 50710,
-  "bytes": 655735,
-  "secs": 25.58,
-  "err_kb": 791.49
+  "mean": 0.83,
+  "over40": 0.028,
+  "paths": 18,
+  "nodes": 14916,
+  "bytes": 195726,
+  "secs": 24.21,
+  "err_kb": 158.65
  },
  "cat_sleeping.png:trace": {
-  "mean": 1.431,
-  "over40": 0.168,
+  "mean": 1.318,
+  "over40": 0.103,
   "paths": 12,
-  "nodes": 20542,
-  "bytes": 279094,
-  "secs": 19.29,
-  "err_kb": 390.02
+  "nodes": 9494,
+  "bytes": 127886,
+  "secs": 20.05,
+  "err_kb": 164.6
  },
  "cat_sleeping.png:vtrace": {
   "mean": 3.003,
@@ -68,26 +68,26 @@
   "paths": 704,
   "nodes": 9405,
   "bytes": 491439,
-  "secs": 0.22,
+  "secs": 0.21,
   "err_kb": 1441.2
  },
  "cat_sleeping.png:rt": {
-  "mean": 0.432,
-  "over40": 0.066,
-  "paths": 12,
-  "nodes": 20247,
-  "bytes": 264807,
-  "secs": 18.19,
-  "err_kb": 111.72
+  "mean": 0.198,
+  "over40": 0.01,
+  "paths": 11,
+  "nodes": 7624,
+  "bytes": 100279,
+  "secs": 17.61,
+  "err_kb": 19.39
  },
  "headphone_outline.png:trace": {
-  "mean": 1.593,
-  "over40": 0.643,
+  "mean": 1.565,
+  "over40": 0.592,
   "paths": 5,
-  "nodes": 1060,
-  "bytes": 14697,
-  "secs": 3.75,
-  "err_kb": 22.86
+  "nodes": 1088,
+  "bytes": 15613,
+  "secs": 3.95,
+  "err_kb": 23.86
  },
  "headphone_outline.png:vtrace": {
   "mean": 3.347,
@@ -99,22 +99,22 @@
   "err_kb": 228.05
  },
  "headphone_outline.png:rt": {
-  "mean": 0.328,
-  "over40": 0.075,
+  "mean": 0.268,
+  "over40": 0.018,
   "paths": 5,
-  "nodes": 1290,
-  "bytes": 17369,
-  "secs": 3.3,
-  "err_kb": 5.56
+  "nodes": 1079,
+  "bytes": 14976,
+  "secs": 3.65,
+  "err_kb": 3.92
  },
  "headphones.png:trace": {
-  "mean": 0.963,
-  "over40": 0.285,
+  "mean": 0.888,
+  "over40": 0.264,
   "paths": 8,
-  "nodes": 8759,
-  "bytes": 124485,
-  "secs": 12.55,
-  "err_kb": 117.07
+  "nodes": 5159,
+  "bytes": 73056,
+  "secs": 13.03,
+  "err_kb": 63.35
  },
  "headphones.png:vtrace": {
   "mean": 1.994,
@@ -126,22 +126,22 @@
   "err_kb": 615.21
  },
  "headphones.png:rt": {
-  "mean": 0.217,
-  "over40": 0.006,
-  "paths": 8,
-  "nodes": 9521,
-  "bytes": 123255,
-  "secs": 11.74,
-  "err_kb": 26.12
+  "mean": 0.134,
+  "over40": 0.007,
+  "paths": 9,
+  "nodes": 5391,
+  "bytes": 73386,
+  "secs": 13.98,
+  "err_kb": 9.6
  },
  "icon_headphones94.png:trace": {
-  "mean": 3.795,
-  "over40": 0.871,
+  "mean": 3.513,
+  "over40": 0.464,
   "paths": 15,
-  "nodes": 1247,
-  "bytes": 15643,
+  "nodes": 690,
+  "bytes": 9664,
   "secs": 0.35,
-  "err_kb": 57.97
+  "err_kb": 33.15
  },
  "icon_headphones94.png:vtrace": {
   "mean": 26.943,
@@ -153,22 +153,22 @@
   "err_kb": 1129.74
  },
  "icon_headphones94.png:rt": {
-  "mean": 3.231,
-  "over40": 0.328,
+  "mean": 2.516,
+  "over40": 0.249,
   "paths": 11,
-  "nodes": 1037,
-  "bytes": 13244,
+  "nodes": 871,
+  "bytes": 12392,
   "secs": 0.25,
-  "err_kb": 41.79
+  "err_kb": 30.45
  },
  "icon_pen94.png:trace": {
-  "mean": 3.397,
-  "over40": 1.29,
+  "mean": 2.583,
+  "over40": 0.702,
   "paths": 13,
-  "nodes": 1109,
-  "bytes": 14365,
-  "secs": 0.33,
-  "err_kb": 47.65
+  "nodes": 551,
+  "bytes": 7393,
+  "secs": 0.31,
+  "err_kb": 18.65
  },
  "icon_pen94.png:vtrace": {
   "mean": 11.216,
@@ -180,22 +180,22 @@
   "err_kb": 370.8
  },
  "icon_pen94.png:rt": {
-  "mean": 2.425,
-  "over40": 1.143,
-  "paths": 11,
-  "nodes": 1054,
-  "bytes": 14857,
-  "secs": 0.28,
-  "err_kb": 35.18
+  "mean": 1.039,
+  "over40": 0.34,
+  "paths": 13,
+  "nodes": 452,
+  "bytes": 6334,
+  "secs": 0.24,
+  "err_kb": 6.43
  },
  "icon_pencil48.png:trace": {
-  "mean": 2.164,
-  "over40": 0.781,
+  "mean": 2.009,
+  "over40": 0.825,
   "paths": 9,
-  "nodes": 261,
-  "bytes": 3811,
-  "secs": 0.29,
-  "err_kb": 8.05
+  "nodes": 150,
+  "bytes": 2245,
+  "secs": 0.27,
+  "err_kb": 4.4
  },
  "icon_pencil48.png:vtrace": {
   "mean": 15.833,
@@ -207,22 +207,22 @@
   "err_kb": 82.71
  },
  "icon_pencil48.png:rt": {
-  "mean": 1.074,
-  "over40": 0.13,
+  "mean": 0.834,
+  "over40": 0.0,
   "paths": 9,
-  "nodes": 235,
-  "bytes": 3223,
+  "nodes": 129,
+  "bytes": 2045,
   "secs": 0.17,
-  "err_kb": 3.38
+  "err_kb": 1.67
  },
  "mic_flat.png:trace": {
   "mean": 0.541,
-  "over40": 0.073,
+  "over40": 0.078,
   "paths": 4,
-  "nodes": 720,
-  "bytes": 9654,
-  "secs": 6.89,
-  "err_kb": 5.1
+  "nodes": 674,
+  "bytes": 9229,
+  "secs": 7.11,
+  "err_kb": 4.88
  },
  "mic_flat.png:vtrace": {
   "mean": 1.465,
@@ -234,22 +234,22 @@
   "err_kb": 63.99
  },
  "mic_flat.png:rt": {
-  "mean": 0.086,
+  "mean": 0.09,
   "over40": 0.002,
   "paths": 4,
-  "nodes": 855,
-  "bytes": 11214,
-  "secs": 6.11,
-  "err_kb": 0.94
+  "nodes": 747,
+  "bytes": 10043,
+  "secs": 6.07,
+  "err_kb": 0.88
  },
  "mic_small.png:trace": {
-  "mean": 0.408,
-  "over40": 0.137,
+  "mean": 0.404,
+  "over40": 0.117,
   "paths": 4,
-  "nodes": 1069,
-  "bytes": 15140,
-  "secs": 4.65,
-  "err_kb": 6.03
+  "nodes": 883,
+  "bytes": 12572,
+  "secs": 4.83,
+  "err_kb": 4.96
  },
  "mic_small.png:vtrace": {
   "mean": 0.823,
@@ -261,22 +261,22 @@
   "err_kb": 56.17
  },
  "mic_small.png:rt": {
-  "mean": 0.071,
-  "over40": 0.021,
+  "mean": 0.056,
+  "over40": 0.007,
   "paths": 4,
-  "nodes": 1230,
-  "bytes": 17829,
-  "secs": 3.5,
-  "err_kb": 1.24
+  "nodes": 1063,
+  "bytes": 15051,
+  "secs": 4.02,
+  "err_kb": 0.82
  },
  "pencil.png:trace": {
-  "mean": 0.603,
-  "over40": 0.094,
+  "mean": 0.546,
+  "over40": 0.039,
   "paths": 17,
-  "nodes": 2848,
-  "bytes": 45391,
-  "secs": 18.25,
-  "err_kb": 26.73
+  "nodes": 854,
+  "bytes": 15008,
+  "secs": 19.24,
+  "err_kb": 8.0
  },
  "pencil.png:vtrace": {
   "mean": 1.447,
@@ -288,22 +288,22 @@
   "err_kb": 293.23
  },
  "pencil.png:rt": {
-  "mean": 1.582,
-  "over40": 0.028,
-  "paths": 11,
-  "nodes": 1590,
-  "bytes": 25829,
-  "secs": 13.58,
-  "err_kb": 39.9
+  "mean": 1.685,
+  "over40": 0.007,
+  "paths": 12,
+  "nodes": 591,
+  "bytes": 10225,
+  "secs": 13.38,
+  "err_kb": 16.83
  },
  "pencil_outline.png:trace": {
-  "mean": 1.387,
-  "over40": 0.69,
+  "mean": 1.254,
+  "over40": 0.48,
   "paths": 6,
-  "nodes": 863,
-  "bytes": 11917,
-  "secs": 3.47,
-  "err_kb": 16.14
+  "nodes": 476,
+  "bytes": 7145,
+  "secs": 3.67,
+  "err_kb": 8.75
  },
  "pencil_outline.png:vtrace": {
   "mean": 2.75,
@@ -315,22 +315,22 @@
   "err_kb": 134.32
  },
  "pencil_outline.png:rt": {
-  "mean": 0.341,
-  "over40": 0.214,
+  "mean": 0.197,
+  "over40": 0.026,
   "paths": 6,
-  "nodes": 1439,
-  "bytes": 20116,
-  "secs": 3.36,
-  "err_kb": 6.7
+  "nodes": 556,
+  "bytes": 7979,
+  "secs": 3.08,
+  "err_kb": 1.54
  },
  "ui_toggles.png:trace": {
-  "mean": 2.222,
-  "over40": 1.686,
+  "mean": 2.139,
+  "over40": 1.485,
   "paths": 5,
-  "nodes": 2018,
-  "bytes": 23268,
-  "secs": 0.44,
-  "err_kb": 50.49
+  "nodes": 2047,
+  "bytes": 24789,
+  "secs": 0.45,
+  "err_kb": 51.78
  },
  "ui_toggles.png:vtrace": {
   "mean": 7.582,
@@ -342,12 +342,12 @@
   "err_kb": 38.35
  },
  "ui_toggles.png:rt": {
-  "mean": 2.523,
-  "over40": 2.182,
-  "paths": 9,
-  "nodes": 2998,
-  "bytes": 38553,
-  "secs": 0.66,
-  "err_kb": 94.99
+  "mean": 1.957,
+  "over40": 1.561,
+  "paths": 8,
+  "nodes": 1694,
+  "bytes": 20733,
+  "secs": 0.58,
+  "err_kb": 39.62
  }
 }

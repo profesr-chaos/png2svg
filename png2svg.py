@@ -762,13 +762,22 @@ def trace(src, out, progress=None, **opts):
         core = e
 
     order = sorted(range(len(pal)), key=lambda i: -(lab == i).sum())
-    # Each layer sits on the larger ones, so a shared border cannot leak. It stops
-    # short of the outer rim, where a second edge would double the alpha. Build the
-    # union from the smallest layer up: one pass, not one scan per layer.
+    # Each layer reaches half a source pixel under its smaller neighbours, so a
+    # shared border cannot leak. Not the whole way under: then the largest colour
+    # would lie beneath every edge in the picture, and the renderer's
+    # anti-aliasing would show it along every seam as a thin line of the wrong
+    # colour. It stops short of the outer rim, where a second edge would double
+    # the alpha. Build the union from the smallest layer up: one pass.
     masks, acc = [], np.zeros(core.shape, bool)
     for i in reversed(order):
-        own = lab == i
-        masks.append(own | (acc & core))
+        own = near = lab == i
+        for _ in range(max(1, s // 2)):
+            grown = near.copy()
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    grown |= np.roll(near, (dy, dx), (0, 1))
+            near = grown
+        masks.append(own | (near & acc & core))
         acc |= own
     masks.reverse()
 
@@ -947,6 +956,25 @@ def demo():
     assert r["mean"] < 2, r
     n = pixel_copy("_demo.png", "_demo_exact.svg")
     assert n == 32, n                                             # 32 rows, one run each
+    # a layer reaches only half a source pixel under its neighbour, not all the way:
+    # render the big red layer alone and it must be clear well inside the blue
+    two = Image.new("RGBA", (64, 64), (200, 0, 0, 255))
+    two.paste((0, 0, 200, 255), (40, 0, 64, 64))
+    two_png = os.path.join(tempfile.gettempdir(), "_demo_two.png")
+    two_svg = os.path.join(tempfile.gettempdir(), "_demo_two.svg")
+    two.save(two_png)
+    trace(two_png, two_svg, scale=2)
+    red = [p for p in re.findall(r"<path[^>]*/>", open(two_svg).read()) if "#C80000" in p]
+    assert len(red) == 1, red
+    try:
+        import cairosvg
+    except ImportError:
+        pass
+    else:
+        alone = os.path.join(tempfile.gettempdir(), "_demo_two_red.png")
+        cairosvg.svg2png(bytestring=_svg(64, 64, red[0]).encode(), write_to=alone)
+        alpha = np.array(Image.open(alone).convert("RGBA"))[:, :, 3]
+        assert alpha[32, 20] == 255 and alpha[32, 50] == 0, (alpha[32, 20], alpha[32, 50])
     try:
         import vtracer                                            # noqa: F401
     except ImportError:
