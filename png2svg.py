@@ -36,6 +36,13 @@ DEFAULTS = dict(
                          # inside a near colour, is shading noise and takes it
     min_width=2.0,       # px: a band of a blended colour up to this wide is an
                          # edge transition, not a shape (soft edges need more)
+    band_core=0.003,     # share of the shorter side, floored at min_width: a
+                         # patch of one colour that never gets wider than that
+                         # anywhere along its length has no core, so it is a
+                         # soft edge, not a shape -- however far it runs. A
+                         # share, not a pixel count, because how wide a soft
+                         # edge comes out depends on the size the artwork was
+                         # drawn at. 0 turns the test off
     edge_share=0.5,      # a colour whose pixels blend more often than this is a
                          # transition, not a fill, and goes
     band_tol=20,         # delta E a band pixel may sit off the line between the
@@ -307,7 +314,52 @@ def _runs(lab):
     return out
 
 
-def thin(lab, rgb, inside, pal, width, tol, edge_share):
+def _coreless(lab, runs, wide, sure=None, surest=0.5):
+    """Pixels of a patch of one label that never gets wider than `wide` anywhere.
+
+    A per-pixel width test asks whether *this* pixel sits in a narrow run. On a
+    soft edge two source pixels wide -- eight on the trace grid, more where the
+    edge runs diagonally and an axis-aligned run over-reads it -- that is true
+    at the band's rim and false down its middle, so the test cuts the band in
+    half and leaves the half that survives. Widening the per-pixel threshold
+    instead starts eating real stripes, which have the same run lengths.
+
+    What actually marks a soft edge is not that some of its pixels are narrow
+    but that *none* of them is wide: the whole patch has no core. Reduce the run
+    length over each connected patch and keep the patches whose maximum stays
+    small. A stripe or a stroke keeps a core, however short it is, so it stays
+    whole; and a patch either goes entirely or not at all, which is what keeps
+    the neighbouring layers' outlines smooth. Needs scipy; without it, off.
+
+    With `sure`, a patch whose pixels are mostly of a colour they plainly are,
+    rather than one they landed on between two others, is a shape and stays:
+    that is what tells a flat stripe of a mid tone from a band of the same width
+    that the mid tone only ever appears in because two fills blend across it.
+    The share is taken over the whole patch, not per pixel, so a patch still
+    goes whole or not at all.
+    """
+    try:
+        from scipy import ndimage
+    except ImportError:
+        return np.zeros(lab.shape, bool)
+    out = np.zeros(lab.shape, bool)
+    for c in range(int(lab.max()) + 1):
+        mask = lab == c
+        if not mask.any():
+            continue
+        comp, k = ndimage.label(mask)
+        if not k:
+            continue
+        cid = comp[mask]                          # bincount, not ndimage.maximum:
+        keep = np.bincount(cid, runs[mask] > wide, k + 1) > 0         # 10x faster
+        if sure is not None:
+            n = np.bincount(cid, None, k + 1)
+            keep |= np.bincount(cid, sure[mask], k + 1) > surest * np.maximum(n, 1)
+        out[mask] = ~keep[cid]
+    return out
+
+
+def thin(lab, rgb, inside, pal, width, tol, edge_share, core=0, sure=None):
     """Relabel the edge bands that landed on a third colour.
 
     Two fills that meet get a band of blended colour between them, one pixel
@@ -318,9 +370,20 @@ def thin(lab, rgb, inside, pal, width, tol, edge_share):
     colours that surround it. A real thin stroke fails the second test, so it
     survives. A colour whose pixels are mostly band pixels only exists on
     edges: it is a transition, not a fill, and all its pixels go.
+
+    `core` widens that first test for a patch with no core at all (see
+    _coreless): a soft edge wider than `width` is still a soft edge. The rings
+    still only reach `width` out, so the middle of a band far wider than that
+    sees nothing but band, fails the two-colours test and is left alone: the
+    test gives back what it cannot place rather than guessing.
     """
     w = int(round(width))
-    cand = inside & (_runs(lab) <= w)
+    runs = _runs(lab)
+    cand = inside & (runs <= w)
+    far = None
+    if core > w:
+        far = inside & _coreless(lab, runs, core, sure)
+        cand |= far
     if not cand.any():
         return lab
     surv = lab.copy()
@@ -346,6 +409,15 @@ def thin(lab, rgb, inside, pal, width, tol, edge_share):
     blend = has2 & (t > 0.05) & (t < 0.95) & (resid <= tol)
     new = lab.copy()
     new[ys[blend], xs[blend]] = np.where(t[blend] < 0.5, a[blend], b[blend])
+    if far is not None and blend.any():
+        # Splitting a band this wide pixel by pixel leaves the two fills meeting
+        # along a seam that follows the noise in the source, and a ragged seam
+        # costs more nodes than the sliver it replaced. Vote once over a window
+        # the width of the band, and only over the pixels just relabelled, to
+        # put the seam back down the middle.
+        moved = np.zeros(lab.shape, bool)
+        moved[ys[blend], xs[blend]] = True
+        new = smooth(new, inside, n, core / 4, 1, sure=~moved)
     total = np.bincount(lab[inside], minlength=n)
     blended = np.bincount(lab[ys[blend], xs[blend]], minlength=n)
     gone = blended > edge_share * np.maximum(total, 1)   # colours that only ever blend
@@ -743,8 +815,10 @@ def trace(src, out, progress=None, **opts):
                         cfg["ink_min"], cfg["ink_share"], cfg["min_width"],
                         cfg["ink_de"])
     lab = smooth(lab, inside, len(pal), cfg["smooth_radius"] * s, cfg["smooth_passes"], sure)
-    lab = thin(lab, rgb, inside, pal, cfg["min_width"] * cfg["scale"], cfg["band_tol"],
-               cfg["edge_share"])
+    core = (max(cfg["min_width"], cfg["band_core"] * min(w, h)) * s
+            if cfg["band_core"] else 0)
+    lab = thin(lab, rgb, inside, pal, cfg["min_width"] * s, cfg["band_tol"],
+               cfg["edge_share"], core, sure)
     lab = smooth(lab, inside, len(pal), cfg["smooth_radius"] * s, cfg["smooth_passes"], sure)
     lab = islands(lab, pal, inside, cfg["max_island"] * s * s, 2 * cfg["merge_dist"])
 
@@ -887,6 +961,25 @@ def demo():
     lab[:, 19:22] = 2
     out = thin(lab, pal[lab], np.ones(lab.shape, bool), pal, 4, 20, 0.7)
     assert not (out[:, 19:22] == 2).any() and (out[:, 30:36] == 2).all(), out[10]
+    # a soft edge wider than min_width is still a soft edge: what marks it is
+    # that the patch has no core *anywhere*, not that this pixel sits in a
+    # narrow run. Two 6 px bands of the blend colour, one of constant width and
+    # one that bulges to 12 px somewhere along it. The width test alone keeps
+    # both (6 > 5); `core` takes the one with no core, whole, and leaves the
+    # other whole too -- a bulge anywhere vouches for the length of the patch.
+    pal = np.array([[0, 0, 0], [200, 200, 200], [100, 100, 100]])
+    lab = np.zeros((40, 120), np.int16)
+    lab[:, 33:60] = 1                                             # black|white, twice
+    lab[:, 93:] = 1
+    lab[:, 27:33] = 2                                             # 6 px, never wider
+    lab[:, 87:93] = 2                                             # 6 px, but it
+    lab[15:25, 87:99] = 2                                         # bulges to 12
+    rgb, ones = pal[lab], np.ones(lab.shape, bool)
+    old = thin(lab, rgb, ones, pal, 5, 20, 0.9)
+    assert (old[:, 27:33] == 2).all(), old[20]                    # 6 > 5: width can't
+    out = thin(lab, rgb, ones, pal, 5, 20, 0.9, core=8)
+    assert not (out[:, 27:33] == 2).any(), out[20]                # no core: it goes
+    assert (out[:, 87:93] == 2).all(), out[20]                    # a core: it stays
     # a small near-colour patch inside a fill goes; a far-colour patch stays
     pal = np.array([[200, 120, 60], [190, 110, 55], [255, 255, 255]])
     lab = np.zeros((40, 40), np.int16)
