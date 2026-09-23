@@ -40,6 +40,7 @@ class App(ttk.Frame):
         self.ld = tk.IntVar(value=png2svg.VTRACER["layer_difference"])
         self.fs = tk.IntVar(value=png2svg.VTRACER["filter_speckle"])
         self.pp = tk.IntVar(value=png2svg.VTRACER["path_precision"])
+        self.lossless = tk.BooleanVar(value=True)
         self.prec = tk.IntVar(value=4)
         self.gz = tk.BooleanVar(value=False)
 
@@ -97,10 +98,18 @@ class App(ttk.Frame):
         self.copts = ttk.LabelFrame(self, text="Compress settings", padding=8)
         self.copts.grid(row=r, column=0, columnspan=3, sticky="ew", pady=(10, 0))
         self.copts.columnconfigure(1, weight=1)
-        self._spin("Precision", self.prec, 1, 8, 0,
-                   "significant digits; 3 is smaller but can shift edges", box=self.copts)
+        ttk.Radiobutton(self.copts, text="Lossless", value=True, variable=self.lossless,
+                        command=self.toggle).grid(row=0, column=0, sticky="w")
+        ttk.Label(self.copts, text="keeps every digit, id and title",
+                  foreground="#777").grid(row=0, column=2, sticky="w")
+        ttk.Radiobutton(self.copts, text="Round to", value=False, variable=self.lossless,
+                        command=self.toggle).grid(row=2, column=0, sticky="w", pady=(4, 0))
+        self.prec_box = ttk.Spinbox(self.copts, from_=1, to=8, textvariable=self.prec, width=6)
+        self.prec_box.grid(row=2, column=1, sticky="w", padx=8, pady=(4, 0))
+        ttk.Label(self.copts, text="significant digits; 3 is smaller but can shift edges",
+                  foreground="#777").grid(row=2, column=2, sticky="w", pady=(4, 0))
         ttk.Checkbutton(self.copts, text="gzip (.svgz)", variable=self.gz,
-                        command=self.swap_ext).grid(row=1, column=0, columnspan=3,
+                        command=self.swap_ext).grid(row=3, column=0, columnspan=3,
                                                     sticky="w", pady=(4, 0))
         self.copts.grid_remove()
 
@@ -150,6 +159,7 @@ class App(ttk.Frame):
         (self.opts.grid if mode == "trace" else self.opts.grid_remove)()
         (self.vopts.grid if mode == "vtracer" else self.vopts.grid_remove)()
         (self.copts.grid if mode == "compress" else self.copts.grid_remove)()
+        self.prec_box.configure(state="disabled" if self.lossless.get() else "normal")
 
     def swap_ext(self):
         """The .svgz box and the output name must agree: compress() gzips by flag."""
@@ -204,7 +214,8 @@ class App(ttk.Frame):
         # read every Tk variable here: a worker thread must not touch Tk
         mode = self.mode.get()
         if mode == "compress":
-            job = dict(mode=mode, precision=self.prec.get(), gz=self.gz.get())
+            job = dict(mode=mode, gz=self.gz.get(),
+                       precision=None if self.lossless.get() else self.prec.get())
         elif mode == "vtracer":
             job = dict(mode=mode, layer_difference=self.ld.get(),
                        filter_speckle=self.fs.get(), path_precision=self.pp.get())
