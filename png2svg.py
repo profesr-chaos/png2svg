@@ -4,10 +4,12 @@ Three modes:
   trace()      one smooth vector layer per flat colour (potrace). Best fidelity.
   vtrace()     VTracer (Rust, MIT): ~25x faster, more paths, more colour noise.
   pixel_copy() one rectangle per run of equal pixels: an exact copy, no curves.
+Plus compress(): shrink any SVG (needs scour); an .svgz output is gzipped.
 
     pip install potracer pillow numpy cairosvg vtracer
     scoop install potrace          # optional C binary: ~15x faster, used if present
     python png2svg.py input.png [output.svg] [--exact|--vtracer]
+    python png2svg.py input.svg output.svg|output.svgz --compress
 
 trace() runs one layer per core. The C potrace runs in threads, the Python port
 in processes, so a caller needs the usual `if __name__ == "__main__"` guard.
@@ -847,6 +849,38 @@ def pixel_copy(src, out, progress=None):
     return sum(len(v) for v in runs.values())
 
 
+def compress(src, out, precision=4, gz=False):
+    """Shrink any SVG with scour: drop metadata, comments, editor data and
+    whitespace, round numbers to `precision` significant digits. gz=True writes
+    gzipped bytes (.svgz). Returns (bytes before, bytes after).
+
+    ponytail: scour does the SVG grammar (arcs, transforms, styles); our own
+    _parse() only reads the M/L/C/Z that potrace emits.
+    """
+    import gzip
+    from scour import scour
+    opts = scour.parse_args([
+        "--set-precision=%d" % precision, "--indent=none", "--no-line-breaks",
+        "--strip-xml-prolog", "--remove-metadata", "--remove-descriptive-elements",
+        "--enable-comment-stripping", "--enable-id-stripping", "--shorten-ids"])
+    raw = open(src, "rb").read()
+    if raw[:2] == b"\x1f\x8b":                  # already an .svgz
+        raw = gzip.decompress(raw)
+    data = scour.scourString(raw.decode("utf-8"), opts).encode("utf-8")
+    if gz:
+        data = gzip.compress(data, 9)
+    open(out, "wb").write(data)
+    return len(raw), len(data)
+
+
+def compare_svg(a_svg, b_svg):
+    """Render SVG `a` to a PNG, then score SVG `b` against it. Needs cairosvg."""
+    import cairosvg
+    png = os.path.join(tempfile.gettempdir(), os.path.basename(a_svg) + ".ref.png")
+    cairosvg.svg2png(url=a_svg, write_to=png)
+    return compare(png, b_svg)
+
+
 def compare(src, svg_path):
     """Render the SVG back and score it against the source. Needs cairosvg."""
     import cairosvg
@@ -982,6 +1016,23 @@ def demo():
     else:
         vtrace("_demo.png", "_demo_vt.svg", filter_speckle=2)
         assert "<path" in open("_demo_vt.svg").read()
+    # compress: comments and metadata go, long decimals round, the look stays
+    fat = os.path.join(tempfile.gettempdir(), "_demo_fat.svg")
+    open(fat, "w").write(
+        '<?xml version="1.0"?>\n<!-- editor junk -->\n'
+        '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">\n'
+        '  <metadata>made by hand</metadata>\n'
+        '  <path id="shape1" fill="#ff0000" d="M 16.000001 16.000001 L 47.999999 16.000001 '
+        'L 47.999999 47.999999 L 16.000001 47.999999 Z"/>\n</svg>\n')
+    try:
+        for ext in (".svg", ".svgz"):
+            small = fat + ".min" + ext
+            a, b = compress(fat, small, gz=ext == ".svgz")
+            assert b < a / 2, (ext, a, b)
+            r = compare_svg(fat, small)
+            assert r["mean"] < 0.05, (ext, r)
+    except ImportError:
+        print("scour or cairosvg not installed; skipped the compress check")
     print("self-check ok")
 
 
@@ -993,6 +1044,12 @@ if __name__ == "__main__":
     else:
         src = args[0]
         out = args[1] if len(args) > 1 else re.sub(r"\.\w+$", "", src) + ".svg"
+        if "--compress" in sys.argv:
+            a, b = compress(src, out, gz=out.lower().endswith(".svgz"))
+            r = compare_svg(src, out)
+            print("%d -> %d bytes (-%.0f%%), mean %.4f/255"
+                  % (a, b, 100 * (1 - b / a), r["mean"]))
+            sys.exit()
         if "--exact" in sys.argv:
             print("runs:", pixel_copy(src, out, print))
         elif "--vtracer" in sys.argv:

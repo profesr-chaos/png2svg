@@ -4,6 +4,7 @@
     scoop install potrace          # optional C binary: ~15x faster, used if present
     python png2svg_app.py
 """
+import io
 import os
 import queue
 import re
@@ -39,9 +40,11 @@ class App(ttk.Frame):
         self.ld = tk.IntVar(value=png2svg.VTRACER["layer_difference"])
         self.fs = tk.IntVar(value=png2svg.VTRACER["filter_speckle"])
         self.pp = tk.IntVar(value=png2svg.VTRACER["path_precision"])
+        self.prec = tk.IntVar(value=4)
+        self.gz = tk.BooleanVar(value=False)
 
         r = 0
-        ttk.Label(self, text="PNG").grid(row=r, column=0, sticky="w")
+        ttk.Label(self, text="Input").grid(row=r, column=0, sticky="w")
         ttk.Entry(self, textvariable=self.src).grid(row=r, column=1, sticky="ew", padx=6)
         ttk.Button(self, text="Browse", command=self.pick_src).grid(row=r, column=2)
 
@@ -60,6 +63,8 @@ class App(ttk.Frame):
         ttk.Radiobutton(box, text="VTracer (fast)", value="vtracer", variable=self.mode,
                         command=self.toggle).pack(side="left", padx=(12, 0))
         ttk.Radiobutton(box, text="Exact pixel copy", value="exact", variable=self.mode,
+                        command=self.toggle).pack(side="left", padx=(12, 0))
+        ttk.Radiobutton(box, text="Compress SVG", value="compress", variable=self.mode,
                         command=self.toggle).pack(side="left", padx=(12, 0))
 
         r += 1
@@ -89,6 +94,16 @@ class App(ttk.Frame):
                    box=self.vopts)
         self.vopts.grid_remove()
 
+        self.copts = ttk.LabelFrame(self, text="Compress settings", padding=8)
+        self.copts.grid(row=r, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+        self.copts.columnconfigure(1, weight=1)
+        self._spin("Precision", self.prec, 1, 8, 0,
+                   "significant digits; 3 is smaller but can shift edges", box=self.copts)
+        ttk.Checkbutton(self.copts, text="gzip (.svgz)", variable=self.gz,
+                        command=self.swap_ext).grid(row=1, column=0, columnspan=3,
+                                                    sticky="w", pady=(4, 0))
+        self.copts.grid_remove()
+
         r += 1
         exe = png2svg.find_potrace()
         engine = ("engine: C potrace, %d workers" % (os.cpu_count() or 1) if exe else
@@ -97,6 +112,10 @@ class App(ttk.Frame):
             import vtracer                             # noqa: F401
         except ImportError:
             engine += "  |  no vtracer - run: pip install vtracer"
+        try:
+            import scour                               # noqa: F401
+        except ImportError:
+            engine += "  |  no scour - run: pip install scour"
         ttk.Label(self, text=engine, foreground="#777" if exe else "#a33").grid(
             row=r, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
@@ -107,7 +126,7 @@ class App(ttk.Frame):
         self.bar.grid(row=r, column=1, columnspan=2, sticky="ew", padx=6, pady=(12, 0))
 
         r += 1
-        self.status = ttk.Label(self, text="Pick a PNG.", foreground="#555")
+        self.status = ttk.Label(self, text="Pick a PNG or an SVG.", foreground="#555")
         self.status.grid(row=r, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
         r += 1
@@ -130,22 +149,39 @@ class App(ttk.Frame):
         mode = self.mode.get()
         (self.opts.grid if mode == "trace" else self.opts.grid_remove)()
         (self.vopts.grid if mode == "vtracer" else self.vopts.grid_remove)()
+        (self.copts.grid if mode == "compress" else self.copts.grid_remove)()
+
+    def swap_ext(self):
+        """The .svgz box and the output name must agree: compress() gzips by flag."""
+        out = self.out.get()
+        if out:
+            self.out.set(re.sub(r"\.svgz?$", "", out) + (".svgz" if self.gz.get() else ".svg"))
 
     def pick_src(self):
-        p = filedialog.askopenfilename(filetypes=[("PNG", "*.png"), ("All", "*.*")])
+        p = filedialog.askopenfilename(filetypes=[("PNG or SVG", "*.png *.svg *.svgz"),
+                                                  ("All", "*.*")])
         if p:
             self.src.set(p)
-            self.out.set(re.sub(r"\.\w+$", "", p) + ".svg")
+            base = re.sub(r"\.\w+$", "", p)
+            if p.lower().endswith((".svg", ".svgz")):   # an SVG can only be compressed
+                self.mode.set("compress")
+                self.toggle()
+                base += ".min"                          # never write over the source
+            self.out.set(base + (".svgz" if self.mode.get() == "compress" and self.gz.get()
+                                 else ".svg"))
             self.show(self.src_view, p)
 
     def pick_out(self):
         p = filedialog.asksaveasfilename(defaultextension=".svg",
-                                         filetypes=[("SVG", "*.svg")])
+                                         filetypes=[("SVG", "*.svg"), ("SVGZ", "*.svgz")])
         if p:
             self.out.set(p)
 
     def show(self, label, path, i=0):
         try:
+            if path.lower().endswith((".svg", ".svgz")):
+                import cairosvg
+                path = io.BytesIO(cairosvg.svg2png(url=path))
             im = Image.open(path).convert("RGBA")
             im.thumbnail((THUMB, THUMB))
             flat = Image.new("RGBA", im.size, (255, 255, 255, 255))
@@ -163,9 +199,13 @@ class App(ttk.Frame):
             return self.say("Pick a PNG that exists.")
         if not out:
             return self.say("Pick an output path.")
+        if os.path.abspath(out) == os.path.abspath(src):
+            return self.say("Pick an output path that is not the input.")
         # read every Tk variable here: a worker thread must not touch Tk
         mode = self.mode.get()
-        if mode == "vtracer":
+        if mode == "compress":
+            job = dict(mode=mode, precision=self.prec.get(), gz=self.gz.get())
+        elif mode == "vtracer":
             job = dict(mode=mode, layer_difference=self.ld.get(),
                        filter_speckle=self.fs.get(), path_precision=self.pp.get())
         else:
@@ -182,6 +222,18 @@ class App(ttk.Frame):
         put = lambda kind, text: self.msgs.put((kind, text))
         try:
             mode = job.pop("mode")
+            if mode == "compress":
+                put("step", "compress")
+                a, b = png2svg.compress(src, out, **job)
+                head = "%.1f KB -> %.1f KB (-%.0f%%)" % (a / 1024, b / 1024, 100 * (1 - b / a))
+                try:
+                    put("step", "score the result")
+                    r = png2svg.compare_svg(src, out)
+                    put("preview", r["render"])
+                    head += ", mean %.3f/255 from the original" % r["mean"]
+                except ImportError:
+                    head += " (install cairosvg to score it)"
+                return put("done", head)
             if mode == "exact":
                 n = png2svg.pixel_copy(src, out, lambda t: put("step", t))
                 head = "rectangles: %d" % n
