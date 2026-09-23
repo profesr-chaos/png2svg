@@ -19,6 +19,23 @@ import png2svg
 THUMB = 220
 
 
+def _size(n):
+    """Bytes in the unit that fits: B under 1 KB, KB under 1 MB, else MB."""
+    if n < 1024:
+        return "%d B" % n
+    if n < 1024 * 1024:
+        return "%.1f KB" % (n / 1024)
+    return "%.1f MB" % (n / 1024 / 1024)
+
+
+def _saving(before, after):
+    """'Saved 1.3 KB (8%): 16.3 KB -> 15.0 KB'. A tiny .svgz can grow: the
+    gzip header costs bytes, so say 'Grew', not a negative saving."""
+    d = before - after
+    return "%s %s (%.0f%%): %s -> %s" % ("Saved" if d >= 0 else "Grew", _size(abs(d)),
+                                         100 * abs(d) / before, _size(before), _size(after))
+
+
 class App(ttk.Frame):
     def __init__(self, root):
         super().__init__(root, padding=12)
@@ -236,7 +253,7 @@ class App(ttk.Frame):
             if mode == "compress":
                 put("step", "compress")
                 a, b = png2svg.compress(src, out, **job)
-                head = "%.1f KB -> %.1f KB (-%.0f%%)" % (a / 1024, b / 1024, 100 * (1 - b / a))
+                head = _saving(a, b)
                 try:
                     put("step", "score the result")
                     r = png2svg.compare_svg(src, out)
@@ -244,6 +261,8 @@ class App(ttk.Frame):
                     head += ", mean %.3f/255 from the original" % r["mean"]
                 except ImportError:
                     head += " (install cairosvg to score it)"
+                except Exception as e:          # the file is written; keep the saving
+                    head += " (no score: %s)" % e
                 return put("done", head)
             if mode == "exact":
                 n = png2svg.pixel_copy(src, out, lambda t: put("step", t))
@@ -274,7 +293,8 @@ class App(ttk.Frame):
                 if kind == "preview":
                     self.show(self.out_view, text, 1)
                 elif kind == "done":
-                    self.finish("Wrote %s - %s" % (os.path.basename(self.out.get()), text))
+                    # result first: a narrow window cuts the end of the line
+                    self.finish("%s - wrote %s" % (text, os.path.basename(self.out.get())))
                 elif kind == "fail":
                     self.finish(text)
                 else:
