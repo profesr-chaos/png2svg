@@ -20,6 +20,23 @@ import svg_edit
 CMP_VIEW = 260                          # pixel size of each compare canvas
 
 
+def _size(n):
+    """Bytes in the unit that fits: B under 1 KB, KB under 1 MB, else MB."""
+    if n < 1024:
+        return "%d B" % n
+    if n < 1024 * 1024:
+        return "%.1f KB" % (n / 1024)
+    return "%.1f MB" % (n / 1024 / 1024)
+
+
+def _saving(before, after):
+    """'Saved 1.3 KB (8%): 16.3 KB -> 15.0 KB'. A tiny .svgz can grow: the
+    gzip header costs bytes, so say 'Grew', not a negative saving."""
+    d = before - after
+    return "%s %s (%.0f%%): %s -> %s" % ("Saved" if d >= 0 else "Grew", _size(abs(d)),
+                                         100 * abs(d) / before, _size(before), _size(after))
+
+
 class App(ttk.Frame):
     def __init__(self, root):
         super().__init__(root, padding=12)
@@ -56,9 +73,12 @@ class App(ttk.Frame):
         self.ld = tk.IntVar(value=png2svg.VTRACER["layer_difference"])
         self.fs = tk.IntVar(value=png2svg.VTRACER["filter_speckle"])
         self.pp = tk.IntVar(value=png2svg.VTRACER["path_precision"])
+        self.lossless = tk.BooleanVar(value=True)
+        self.prec = tk.IntVar(value=4)
+        self.gz = tk.BooleanVar(value=False)
 
         r = 0
-        ttk.Label(self, text="PNG").grid(row=r, column=0, sticky="w")
+        ttk.Label(self, text="Input").grid(row=r, column=0, sticky="w")
         ttk.Entry(self, textvariable=self.src).grid(row=r, column=1, sticky="ew", padx=6)
         ttk.Button(self, text="Browse", command=self.pick_src).grid(row=r, column=2)
 
@@ -77,6 +97,8 @@ class App(ttk.Frame):
         ttk.Radiobutton(box, text="VTracer (fast)", value="vtracer", variable=self.mode,
                         command=self.toggle).pack(side="left", padx=(12, 0))
         ttk.Radiobutton(box, text="Exact pixel copy", value="exact", variable=self.mode,
+                        command=self.toggle).pack(side="left", padx=(12, 0))
+        ttk.Radiobutton(box, text="Compress SVG", value="compress", variable=self.mode,
                         command=self.toggle).pack(side="left", padx=(12, 0))
 
         r += 1
@@ -106,6 +128,24 @@ class App(ttk.Frame):
                    box=self.vopts)
         self.vopts.grid_remove()
 
+        self.copts = ttk.LabelFrame(self, text="Compress settings", padding=8)
+        self.copts.grid(row=r, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+        self.copts.columnconfigure(1, weight=1)
+        ttk.Radiobutton(self.copts, text="Lossless", value=True, variable=self.lossless,
+                        command=self.toggle).grid(row=0, column=0, sticky="w")
+        ttk.Label(self.copts, text="keeps every digit, id and title",
+                  foreground="#777").grid(row=0, column=2, sticky="w")
+        ttk.Radiobutton(self.copts, text="Round to", value=False, variable=self.lossless,
+                        command=self.toggle).grid(row=2, column=0, sticky="w", pady=(4, 0))
+        self.prec_box = ttk.Spinbox(self.copts, from_=1, to=8, textvariable=self.prec, width=6)
+        self.prec_box.grid(row=2, column=1, sticky="w", padx=8, pady=(4, 0))
+        ttk.Label(self.copts, text="significant digits; 3 is smaller but can shift edges",
+                  foreground="#777").grid(row=2, column=2, sticky="w", pady=(4, 0))
+        ttk.Checkbutton(self.copts, text="gzip (.svgz)", variable=self.gz,
+                        command=self.swap_ext).grid(row=3, column=0, columnspan=3,
+                                                    sticky="w", pady=(4, 0))
+        self.copts.grid_remove()
+
         r += 1
         exe = png2svg.find_potrace()
         engine = ("engine: C potrace, %d workers" % (os.cpu_count() or 1) if exe else
@@ -114,6 +154,10 @@ class App(ttk.Frame):
             import vtracer                             # noqa: F401
         except ImportError:
             engine += "  |  no vtracer - run: pip install vtracer"
+        try:
+            import scour                               # noqa: F401
+        except ImportError:
+            engine += "  |  no scour - run: pip install scour"
         ttk.Label(self, text=engine, foreground="#777" if exe else "#a33").grid(
             row=r, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
@@ -124,7 +168,7 @@ class App(ttk.Frame):
         self.bar.grid(row=r, column=1, columnspan=2, sticky="ew", padx=6, pady=(12, 0))
 
         r += 1
-        self.status = ttk.Label(self, text="Pick a PNG.", foreground="#555")
+        self.status = ttk.Label(self, text="Pick a PNG or an SVG.", foreground="#555")
         self.status.grid(row=r, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
         r += 1
@@ -200,23 +244,41 @@ class App(ttk.Frame):
         mode = self.mode.get()
         (self.opts.grid if mode == "trace" else self.opts.grid_remove)()
         (self.vopts.grid if mode == "vtracer" else self.vopts.grid_remove)()
+        (self.copts.grid if mode == "compress" else self.copts.grid_remove)()
+        self.prec_box.configure(state="disabled" if self.lossless.get() else "normal")
+
+    def swap_ext(self):
+        """The .svgz box and the output name must agree: compress() gzips by flag."""
+        out = self.out.get()
+        if out:
+            self.out.set(re.sub(r"\.svgz?$", "", out) + (".svgz" if self.gz.get() else ".svg"))
 
     def pick_src(self):
-        p = filedialog.askopenfilename(filetypes=[("PNG", "*.png"), ("All", "*.*")])
+        p = filedialog.askopenfilename(filetypes=[("PNG or SVG", "*.png *.svg *.svgz"),
+                                                  ("All", "*.*")])
         if p:
             self.src.set(p)
-            self.out.set(re.sub(r"\.\w+$", "", p) + ".svg")
-            self.load_source(p)
+            base = re.sub(r"\.\w+$", "", p)
+            if p.lower().endswith((".svg", ".svgz")):   # an SVG can only be compressed
+                self.mode.set("compress")
+                self.toggle()
+                base += ".min"                          # never write over the source
+            self.out.set(base + (".svgz" if self.mode.get() == "compress" and self.gz.get()
+                                 else ".svg"))
+            self.show(self.src_view, p)
 
     def pick_out(self):
         p = filedialog.asksaveasfilename(defaultextension=".svg",
-                                         filetypes=[("SVG", "*.svg")])
+                                         filetypes=[("SVG", "*.svg"), ("SVGZ", "*.svgz")])
         if p:
             self.out.set(p)
 
     def load_source(self, path):
         """Flatten the PNG over white, same as a path fill renders, for the compare view."""
         try:
+            if path.lower().endswith((".svg", ".svgz")):
+                import cairosvg
+                path = io.BytesIO(cairosvg.svg2png(url=path))
             im = Image.open(path).convert("RGBA")
         except Exception:
             self.src_img = None
@@ -236,9 +298,14 @@ class App(ttk.Frame):
             return self.say("Pick a PNG that exists.")
         if not out:
             return self.say("Pick an output path.")
+        if os.path.abspath(out) == os.path.abspath(src):
+            return self.say("Pick an output path that is not the input.")
         # read every Tk variable here: a worker thread must not touch Tk
         mode = self.mode.get()
-        if mode == "vtracer":
+        if mode == "compress":
+            job = dict(mode=mode, gz=self.gz.get(),
+                       precision=None if self.lossless.get() else self.prec.get())
+        elif mode == "vtracer":
             job = dict(mode=mode, layer_difference=self.ld.get(),
                        filter_speckle=self.fs.get(), path_precision=self.pp.get())
         else:
@@ -255,6 +322,20 @@ class App(ttk.Frame):
         put = lambda kind, text: self.msgs.put((kind, text))
         try:
             mode = job.pop("mode")
+            if mode == "compress":
+                put("step", "compress")
+                a, b = png2svg.compress(src, out, **job)
+                head = _saving(a, b)
+                try:
+                    put("step", "score the result")
+                    r = png2svg.compare_svg(src, out)
+                    put("preview", r["render"])
+                    head += ", mean %.3f/255 from the original" % r["mean"]
+                except ImportError:
+                    head += " (install cairosvg to score it)"
+                except Exception as e:          # the file is written; keep the saving
+                    head += " (no score: %s)" % e
+                return put("done", head)
             if mode == "exact":
                 n = png2svg.pixel_copy(src, out, lambda t: put("step", t))
                 head = "rectangles: %d" % n
@@ -290,7 +371,8 @@ class App(ttk.Frame):
                     self.rebuild_palette()
                     self.render_current()
                 elif kind == "done":
-                    self.finish("Wrote %s - %s" % (os.path.basename(self.out.get()), payload))
+                    # result first: a narrow window cuts the end of the line
+                    self.finish("%s - wrote %s" % (text, os.path.basename(self.out.get())))
                 elif kind == "fail":
                     self.finish(payload)
                 else:
