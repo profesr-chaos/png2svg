@@ -60,6 +60,8 @@ DEFAULTS = dict(
     opttolerance=0.6,
     turdsize=6,          # px^2: drop traced specks under this area
     straight_tol=0.1,    # px a node may move when a run collapses to one line
+    subpixel=1.0,        # px each way that a traced node may search the source
+                         # for its true edge; 0 leaves nodes on the label grid
     backend="auto",      # "auto" | "potrace" (the C binary) | "python" (potracer)
     workers=0,           # 0 = one per core
     max_grid=20_000_000, # cap on pixels of the trace grid; scale drops to fit
@@ -783,6 +785,212 @@ def straighten(d, tol=DEFAULTS["straight_tol"]):
     return " ".join(out)
 
 
+def _bilinear(img, x, y):
+    """Sample an h*w*3 image at float path coordinates. Pixel (i, j) covers
+    [j, j+1) x [i, i+1), so its centre sits at (j + 0.5, i + 0.5)."""
+    h, w = img.shape[:2]
+    x = np.clip(x - 0.5, 0, w - 1)
+    y = np.clip(y - 0.5, 0, h - 1)
+    x0, y0 = np.floor(x).astype(np.intp), np.floor(y).astype(np.intp)
+    x1, y1 = np.minimum(x0 + 1, w - 1), np.minimum(y0 + 1, h - 1)
+    fx, fy = (x - x0)[:, None], (y - y0)[:, None]
+    return ((img[y0, x0] * (1 - fx) + img[y0, x1] * fx) * (1 - fy)
+            + (img[y1, x0] * (1 - fx) + img[y1, x1] * fx) * fy)
+
+
+def _edge_shift(p, nrm, src, A, B, reach, step=0.125):
+    """Where the true edge sits along each normal, by conserving coverage.
+
+    Walk the source from `reach` inside the layer to `reach` outside it and
+    project every sample onto the chord A->B in sRGB: t runs 0 (all A) to 1
+    (all B). Anti-aliasing is a linear mix, so t is the source's coverage of B,
+    and coverage integrates to area: for a hard edge at u, the integral of t
+    over [-R, R] is exactly R - u, whatever filter blurred it. So u = R - Int t.
+
+    Thresholding t at 0.5 instead -- what labelling a grid does -- reads the
+    edge off one sample of a ramp, and a ramp whose two halves have different
+    slopes crosses 0.5 away from its own centre of mass: on a box-filtered
+    source that is a bias of up to 0.083 px, fixed for a given edge, in a
+    direction set by where the edge falls inside its pixel. Integrating cannot
+    make that mistake. Returns the shift and which normals gave a clean answer.
+    """
+    n = int(round(2 * reach / step)) + 1
+    us = np.linspace(-reach, reach, n)
+    v = B - A
+    n2 = np.maximum((v * v).sum(1), 1e-6)
+    t = np.empty((len(p), n), np.float64)
+    for k, u in enumerate(us):
+        q = p + u * nrm
+        t[:, k] = ((_bilinear(src, q[:, 0], q[:, 1]) - A) * v).sum(1) / n2
+    # both ends must sit in a flat fill, or the window straddles a second edge
+    # (a thin stroke, a corner, a three-colour junction) and the integral is
+    # measuring something that is not one boundary
+    ok = (t[:, 0] < 0.15) & (t[:, -1] > 0.85)
+    area = np.trapezoid(t.clip(0, 1), dx=us[1] - us[0], axis=1)
+    return reach - area, ok
+
+
+def _along(start, segs, per_px=1.0, kmax=8):
+    """Sample points and tangents along every segment of one subpath.
+
+    A segment, not a node, is what carries an edge: flat artwork traces to long
+    runs whose only nodes are the corners at each end, and a corner has no one
+    normal to move along. Returns the points, their tangents, and which segment
+    each came from. Roughly one sample per source pixel of length.
+    """
+    pts, tans, sid = [], [], []
+    cur = np.asarray(start, float)
+    for j, s in enumerate(segs):
+        end = np.asarray(s[-1], float)
+        k = int(np.clip(round(np.hypot(*(end - cur)) * per_px), 2, kmax))
+        u = ((np.arange(k) + 0.5) / k)[:, None]
+        if s[0] == "L":
+            pts.append(cur + u * (end - cur))
+            tans.append(np.repeat((end - cur)[None], k, 0))
+        else:
+            c1, c2 = np.asarray(s[1], float), np.asarray(s[2], float)
+            m = 1 - u
+            pts.append(m ** 3 * cur + 3 * m * m * u * c1 + 3 * m * u * u * c2 + u ** 3 * end)
+            tans.append(3 * m * m * (c1 - cur) + 6 * m * u * (c2 - c1) + 3 * u * u * (end - c2))
+        sid.append(np.full(k, j))
+        cur = end
+    return np.vstack(pts), np.vstack(tans), np.concatenate(sid)
+
+
+def refine(d, src, lab, scale, pal, i, reach=1.0, spread=0.3):
+    """Slide a traced layer onto the sub-pixel edge in the source.
+
+    potrace only ever sees the label grid, so an edge lands on the quarter-pixel
+    staircase and inherits whatever bias the labelling threshold had. The source
+    knows better: across a boundary it runs from this layer's colour to the
+    colour of whatever is on the other side, and coverage says where between
+    them the boundary really is.
+
+    Measure that at several points along each segment and average; a segment
+    whose samples disagree by more than `spread` px is crossing more than one
+    edge and keeps its place. Then move each node so that *both* of the segments
+    meeting there land on their measured edge -- two normals, two offsets, one
+    2x2 solve, which is what puts a corner back on its corner. Where the two
+    normals are nearly parallel (a smooth run) that solve is ill-conditioned, so
+    the node just takes the mean offset along the mean normal. Control points
+    ride along, weighted 2/3-1/3 towards the node each is nearer, so a curve
+    keeps its shape and only its position changes.
+    """
+    subs = _parse(d)
+    if not subs:
+        return d
+    P = np.asarray(pal, np.float32)
+    A = P[i]
+    gh, gw = lab.shape                        # the label grid, scale per source px
+    H, W = gh / scale, gw / scale
+    out = []
+    for sub in subs:
+        segs = sub["segs"]
+        n = len(segs)
+        closed = n > 2 and abs(segs[-1][-1][0] - sub["start"][0]) < 1e-9 \
+            and abs(segs[-1][-1][1] - sub["start"][1]) < 1e-9
+        if n < 2:
+            out.append(_write(sub["start"], segs))
+            continue
+        p, tan, sid = _along(sub["start"], segs)
+        nrm = np.stack([tan[:, 1], -tan[:, 0]], 1)
+        nrm /= np.maximum(np.hypot(tan[:, 0], tan[:, 1]), 1e-9)[:, None]
+
+        def look(q):        # the label under a path coordinate, at grid precision
+            return lab[np.clip((q[:, 1] * scale).astype(np.intp), 0, gh - 1),
+                       np.clip((q[:, 0] * scale).astype(np.intp), 0, gw - 1)]
+
+        # which way is out? probe close first, then further: a boundary this
+        # layer shares with a thin neighbour is only a pixel from the next one
+        sgn = np.zeros(len(p))
+        far = np.full(len(p), -1, np.int16)
+        for probe in (0.8, 1.6):
+            pos, neg = look(p + probe * nrm), look(p - probe * nrm)
+            new = np.where((neg == i) & (pos != i) & (pos >= 0), 1.0,
+                           np.where((pos == i) & (neg != i) & (neg >= 0), -1.0, 0.0))
+            take = (sgn == 0) & (new != 0)
+            sgn[take] = new[take]
+            far[take] = np.where(new > 0, pos, neg)[take]
+        ok = sgn != 0
+        nrm *= sgn[:, None]
+        # and the label must turn over right here: a layer reaches half a pixel
+        # under its neighbours, and that buried rim is not an edge to move
+        ok &= look(p - 0.25 * nrm) == i
+        B = P[np.maximum(far, 0)]
+        ok &= ((B - A) ** 2).sum(1) > 400.0      # 20 units apart, or t is noise
+        # the whole search window must be inside the picture: outside it the
+        # sampler clamps, which fakes a saturated profile and a bogus integral
+        for e in (-reach, reach):
+            q = p + e * nrm
+            ok &= (q[:, 0] > 0.5) & (q[:, 0] < W - 0.5) & (q[:, 1] > 0.5) & (q[:, 1] < H - 0.5)
+        u = np.zeros(len(p))
+        if ok.any():
+            s, good = _edge_shift(p[ok], nrm[ok], src, A, B[ok], reach)
+            keep = np.flatnonzero(ok)[good]
+            u[keep] = s[good]
+            ok[:] = False
+            ok[keep] = True
+        # per segment: mean offset and mean normal over its clean samples
+        cnt = np.bincount(sid[ok], minlength=n).astype(float)
+        sum_u = np.bincount(sid[ok], u[ok], n).astype(float)
+        sum_uu = np.bincount(sid[ok], u[ok] ** 2, n).astype(float)
+        nx = np.bincount(sid[ok], nrm[ok, 0], n)
+        ny = np.bincount(sid[ok], nrm[ok, 1], n)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            off = sum_u / cnt
+            var = sum_uu / cnt - off ** 2
+        good = ((cnt >= 2) & (cnt >= np.bincount(sid, minlength=n) / 3)
+                & (np.sqrt(np.maximum(var, 0)) <= spread) & (np.abs(off) <= reach))
+        off = np.where(good, off, 0.0)
+        N = np.stack([nx, ny], 1).astype(float)   # bincount of nothing comes back int
+        N /= np.maximum(np.hypot(N[:, 0], N[:, 1]), 1e-9)[:, None]
+
+        # node j joins segment j-1 to segment j; solve for the point that lands
+        # both on their measured edges (a corner), or slide along the mean normal
+        prev = np.roll(np.arange(n), 1) if closed else np.maximum(np.arange(n) - 1, 0)
+        na, nb = N[prev], N                      # the two normals meeting here
+        oa, ob = off[prev], off                  # and the offset each one wants
+        ga, gb = good[prev], good
+        det = na[:, 0] * nb[:, 1] - na[:, 1] * nb[:, 0]
+        both = ga & gb & (np.abs(det) > 0.25)    # over ~15 degrees apart
+        safe = np.where(both, det, 1.0)
+        disp = np.stack([(oa * nb[:, 1] - ob * na[:, 1]) / safe,
+                         (na[:, 0] * ob - nb[:, 0] * oa) / safe], 1)
+        wa, wb = ga.astype(float), gb.astype(float)   # bools would OR, not add
+        mean_n = na * wa[:, None] + nb * wb[:, None]
+        mean_n /= np.maximum(np.hypot(mean_n[:, 0], mean_n[:, 1]), 1e-9)[:, None]
+        mean_o = (oa * wa + ob * wb) / np.maximum(wa + wb, 1.0)
+        disp = np.where(both[:, None], disp, mean_o[:, None] * mean_n)
+        disp[~(ga | gb)] = 0.0
+        mag = np.hypot(disp[:, 0], disp[:, 1])
+        disp *= np.minimum(1.0, reach / np.maximum(mag, 1e-9))[:, None]
+        if not closed:
+            disp[0] = disp[-1] = 0.0
+        # displacement of node j is disp[j]; the end of segment j is node j+1
+        dend = np.roll(disp, -1, 0) if closed else np.vstack([disp[1:], disp[-1:]])
+
+        new = []
+        for j, s in enumerate(segs):
+            d0, d1 = disp[j], dend[j]
+            if s[0] == "L":
+                new.append(("L", tuple(np.add(s[1], d1))))
+            else:
+                new.append(("C", tuple(np.add(s[1], (2 * d0 + d1) / 3)),
+                            tuple(np.add(s[2], (d0 + 2 * d1) / 3)),
+                            tuple(np.add(s[3], d1))))
+        out.append(_write(tuple(np.add(sub["start"], disp[0])), new))
+    return " ".join(out)
+
+
+def _write(start, segs):
+    """Absolute path text, at full precision: straighten() rounds it later."""
+    parts = ["M%.4f %.4f" % start]
+    for s in segs:
+        parts.append(("L%.4f %.4f" % s[1]) if s[0] == "L"
+                     else ("C%.4f %.4f %.4f %.4f %.4f %.4f" % (s[1] + s[2] + s[3])))
+    return " ".join(parts)
+
+
 def _svg(w, h, body, extra=""):
     return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" '
             'width="%d" height="%d"%s>\n%s\n</svg>\n' % (w, h, w, h, extra, body))
@@ -822,10 +1030,11 @@ def trace(src, out, progress=None, **opts):
     lab = smooth(lab, inside, len(pal), cfg["smooth_radius"] * s, cfg["smooth_passes"], sure)
     lab = islands(lab, pal, inside, cfg["max_island"] * s * s, 2 * cfg["merge_dist"])
 
+    a1o = a1[:, :, 3:4] / 255.0                 # blend over white: what a path renders as
+    blended = (a1[:, :, :3] * a1o + 255 * (1 - a1o)).astype(np.float32)
+
     grad_defs, grad_fills = [], {}
     if cfg["grad_gain"]:
-        a1o = a1[:, :, 3:4] / 255.0                 # blend over white: what a path renders as
-        blended = a1[:, :, :3] * a1o + 255 * (1 - a1o)
         grad_defs, grad_fills = _gradients(lab, blended, pal, w, h, s, cfg["grad_gain"])
 
     core = lab >= 0                             # silhouette minus its outer rim
@@ -859,6 +1068,8 @@ def trace(src, out, progress=None, **opts):
     parts = []
     for i, d in zip(order, _trace_layers(masks, cfg, say)):
         if d:
+            if cfg["subpixel"]:
+                d = refine(d, blended, lab, s, pal, i, cfg["subpixel"])
             fill = "url(#%s)" % grad_fills[i][0] if i in grad_fills else "#%02X%02X%02X" % tuple(pal[i])
             parts.append('<path fill="%s" d="%s"/>' % (fill, straighten(d, cfg["straight_tol"])))
 
@@ -1001,9 +1212,35 @@ def demo():
     nums = lambda s: len(re.findall(r"-?\d*\.?\d+", s))
     assert nums(straighten("M0 0 L5 0 L10 0 Z")) == 4              # straight run collapses
     assert nums(straighten("M0 0 L10 0 L10 10 L0 10 Z")) == 8      # corners survive
+    from PIL import ImageDraw
+    # an edge three eighths of a pixel in: the 4x label grid can only place it
+    # on a quarter, so potrace alone is out by 0.175 px; the source says where
+    # it really is, and refine() moves the traced edge there
+    sub = Image.new("L", (512, 512), 255)
+    ImageDraw.Draw(sub).rectangle([0, 0, 162, 511], fill=0)         # 163/8 = 20.375 px
+    sp = os.path.join(tempfile.gettempdir(), "_subpixel.png")
+    sub.resize((64, 64), Image.BOX).convert("RGBA").save(sp)        # real coverage
+    trace(sp, sp + ".svg", min_share=0.05)
+    dark = [q for q in re.findall(r"<path[^>]*/>", open(sp + ".svg").read())
+            if "#000000" in q]
+    assert len(dark) == 1, dark
+    toks = re.findall(r"[A-Za-z]|-?\d*\.?\d+",
+                      re.search(r'\sd="([^"]*)"', dark[0]).group(1))
+    xs, cmd, cx, cy, k = [], "M", 0.0, 0.0, 0
+    while k < len(toks):                                # walk the relative path
+        if toks[k].isalpha():
+            cmd, k = toks[k], k + 1
+            continue
+        m = _ARGC[cmd.upper()]
+        v = [float(t) for t in toks[k:k + m]]
+        k += m
+        cx = v[m - 2] + (cx if cmd.islower() else 0)
+        cy = v[m - 1] + (cy if cmd.islower() else 0)
+        xs.append(cx)
+    at = [x for x in xs if abs(x - 20.375) < 1.0]                   # nodes on that edge
+    assert at and abs(sum(at) / len(at) - 20.375) <= 0.08, at
     # a 0.6 px line on a pixel edge leaves two columns holding a third of a
     # pixel of ink each: no threshold calls either one ink, coverage does
-    from PIL import ImageDraw
     big = Image.new("L", (512, 512), 255)
     ImageDraw.Draw(big).rectangle([16, 16, 175, 175], fill=0)      # black, for the palette
     ImageDraw.Draw(big).line([(304, 0), (304, 511)], fill=0, width=5)
