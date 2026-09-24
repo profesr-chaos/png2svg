@@ -5,3 +5,4 @@ vtracer   # optional: fast Rust tracer
 cairosvg  # optional: scores the result against the source
 scipy     # optional: removes shading patches (islands)
 scour     # optional: the Compress SVG mode
+mcp>=2    # optional: the MCP server (png2svg_mcp.py)
