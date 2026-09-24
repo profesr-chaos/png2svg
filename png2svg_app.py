@@ -83,7 +83,7 @@ class App(ttk.Frame):
         ttk.Button(self, text="Browse", command=self.pick_src).grid(row=r, column=2)
 
         r += 1
-        ttk.Label(self, text="SVG").grid(row=r, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(self, text="Output").grid(row=r, column=0, sticky="w", pady=(6, 0))
         ttk.Entry(self, textvariable=self.out).grid(row=r, column=1, sticky="ew", padx=6,
                                                     pady=(6, 0))
         ttk.Button(self, text="Browse", command=self.pick_out).grid(row=r, column=2,
@@ -265,11 +265,14 @@ class App(ttk.Frame):
                 base += ".min"                          # never write over the source
             self.out.set(base + (".svgz" if self.mode.get() == "compress" and self.gz.get()
                                  else ".svg"))
-            self.show(self.src_view, p)
+            self.load_source(p)
 
     def pick_out(self):
+        cur = self.out.get()                    # open at the current output, not a blank name
         p = filedialog.asksaveasfilename(defaultextension=".svg",
-                                         filetypes=[("SVG", "*.svg"), ("SVGZ", "*.svgz")])
+                                         filetypes=[("SVG", "*.svg"), ("SVGZ", "*.svgz")],
+                                         initialdir=os.path.dirname(cur) or None,
+                                         initialfile=os.path.basename(cur))
         if p:
             self.out.set(p)
 
@@ -370,9 +373,14 @@ class App(ttk.Frame):
                     self.cmp_zoom.set("Fit")
                     self.rebuild_palette()
                     self.render_current()
+                elif kind == "preview":         # compress: path to the rendered PNG
+                    im = Image.open(payload).convert("RGBA")
+                    self.render_img = Image.alpha_composite(
+                        Image.new("RGBA", im.size, "white"), im).convert("RGB")
+                    self.redraw_compare()
                 elif kind == "done":
                     # result first: a narrow window cuts the end of the line
-                    self.finish("%s - wrote %s" % (text, os.path.basename(self.out.get())))
+                    self.finish("%s - wrote %s" % (payload, os.path.basename(self.out.get())))
                 elif kind == "fail":
                     self.finish(payload)
                 else:
