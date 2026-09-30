@@ -2,6 +2,11 @@
 
 Flat-colour PNG to SVG converter, with a small Tkinter front end.
 
+For Windows, download `png2svg.exe` from
+[Releases](https://github.com/profesr-chaos/png2svg/releases) and run it.
+It has Python, cairo and potrace inside, so it needs no install. It unpacks
+itself at each start, so the window takes about 4 s to open.
+
 ## Install
 
     pip install -r requirements.txt
@@ -13,6 +18,14 @@ Flat-colour PNG to SVG converter, with a small Tkinter front end.
     python png2svg.py input.svg output.svg|output.svgz --compress [--round[=N]]
     python png2svg_app.py     # GUI
     python png2svg_mcp.py     # MCP server for an AI agent (see below)
+
+## Build the exe
+
+    pip install pyinstaller
+    python build.py           # dist/png2svg.exe, with icon.ico made from icon.svg
+
+`build.py` bundles the `potrace` and `libcairo-2.dll` that it finds on the
+PATH, so install both first (a Tesseract or GTK install has the DLL).
 
 ## Modes
 
