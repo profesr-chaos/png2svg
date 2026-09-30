@@ -632,12 +632,18 @@ class App(ttk.Frame):
 
 
 if __name__ == "__main__":
+    import multiprocessing
     import sys
+    multiprocessing.freeze_support()        # the exe: a pool worker runs its job, not a second window
+    if getattr(sys, "frozen", False):       # the exe: use its bundled potrace.exe and cairo first
+        os.environ["PATH"] = sys._MEIPASS + os.pathsep + os.environ["PATH"]
     if "--check" in sys.argv:
         svg_edit._selfcheck()
     else:
         root = tk.Tk()
         root.title("PNG to SVG")
+        if os.name == "nt":                 # .ico is a Windows format; default= covers the dialogs too
+            root.iconbitmap(default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico"))
         root.minsize(1000, 700)
         root.geometry("1000x700")
         App(root)
