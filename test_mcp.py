@@ -2,6 +2,8 @@
 
 A stray print() to stdout breaks the protocol, so this fails on one too.
 """
+import base64
+import io
 import json
 import os
 import shutil
@@ -11,8 +13,17 @@ import tempfile
 import anyio
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def diff_panel(content):
+    """The third panel of the preview: black where the two renders agree."""
+    assert content.type == "image" and content.mime_type == "image/png"
+    im = Image.open(io.BytesIO(base64.b64decode(content.data)))
+    assert im.size == (3 * 512 + 2 * 8, 512), im.size      # the 48 px icon, three panels
+    return im.crop((im.width - 512, 0, im.width, 512))
 
 
 async def main():
@@ -35,9 +46,10 @@ async def main():
         assert not r.is_error, r.content
         res = json.loads(r.content[0].text)
         assert res["svg_path"] == os.path.join(tmp, "pencil.svg")
-        assert os.path.getsize(res["svg_path"]) == res["bytes"] > 0
-        assert res["mean"] < 10, res                # a flat icon traces close
-        assert r.content[1].type == "image" and r.content[1].mime_type == "image/png"
+        assert os.path.getsize(res["svg_path"]) == res["svg_bytes"] > 0
+        assert os.path.getsize(png) == res["png_bytes"]
+        assert 0 < res["mean"] < 10, res            # a flat icon traces close
+        assert diff_panel(r.content[1]).getbbox(), "a trace with error shows in the difference"
         assert "read image" in steps and "done" in steps, steps
 
         r = await s.call_tool("png_to_svg", {"png_path": png, "mode": "exact",
@@ -48,7 +60,9 @@ async def main():
         r = await s.call_tool("compress_svg", {"svg_path": res["svg_path"]})
         res = json.loads(r.content[0].text)
         assert res["out_path"] == os.path.join(tmp, "pencil.min.svg")
-        assert res["bytes_after"] < res["bytes_before"] and res["mean_error"] == 0, res
+        assert res["bytes_after"] < res["bytes_before"], res
+        assert res["max"] == 0 and res["within8"] == 100, res
+        assert not diff_panel(r.content[1]).getbbox(), "lossless: the difference is black"
 
         r = await s.call_tool("png_to_svg", {"png_path": "pencil.png"})
         assert r.is_error and "absolute" in r.content[0].text, r.content
