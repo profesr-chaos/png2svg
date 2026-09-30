@@ -1187,7 +1187,7 @@ def compare(src, svg_path):
     flat = lambda x: x[:, :, :3] * (x[:, :, 3:4] / 255.0) + 255 * (1 - x[:, :, 3:4] / 255.0)
     d = np.abs(flat(a) - flat(b)).max(2)
     return dict(mean=d.mean(), max=d.max(), over40=100 * (d > 40).mean(),
-                within8=100 * (d <= 8).mean(), render=png)
+                within8=100 * (d <= 8).mean(), ref=src, render=png)
 
 
 def demo():

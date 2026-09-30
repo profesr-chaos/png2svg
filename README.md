@@ -31,8 +31,13 @@ directly. It has two tools:
 
 | Tool | Does |
 |---|---|
-| `png_to_svg(png_path, svg_path?, mode?, preview?)` | Runs `trace`, `vtrace` or `exact`, and returns the SVG path, its size, the error scores and an 800 px render, so the agent can look at the result. |
-| `compress_svg(svg_path, out_path?, round_digits?)` | Runs `compress()` on any SVG. Lossless unless you give `round_digits`; an `out_path` that ends in `.svgz` writes gzip. Returns the bytes saved and the render difference. |
+| `png_to_svg(png_path, svg_path?, mode?, preview?)` | Runs `trace`, `vtrace` or `exact`, and returns the SVG path, the PNG and SVG sizes, the error scores and a preview. |
+| `compress_svg(svg_path, out_path?, round_digits?, preview?)` | Runs `compress()` on any SVG. Lossless unless you give `round_digits`; an `out_path` that ends in `.svgz` writes gzip. Returns the bytes saved, the error scores and a preview. |
+
+The preview is one image with three panels: the input, the render of the
+output, and their difference (black = equal), so the agent can compare them
+without a read of either file. The tools do not return the SVG text: path data
+costs a token for every 2-3 characters, and the agent has the path.
 
 Register it with Claude Code:
 

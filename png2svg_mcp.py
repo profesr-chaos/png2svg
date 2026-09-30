@@ -15,16 +15,20 @@ import anyio.from_thread
 from mcp.server.mcpserver import Context, Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from PIL import Image as PILImage
+from PIL import ImageChops
 
 import png2svg
 
 mcp = MCPServer("png2svg", instructions=(
     "Convert flat-colour PNGs (logos, icons, flat illustrations) to SVG, and "
-    "shrink any SVG. Every path must be absolute. png_to_svg returns an error "
-    "score and a render of the SVG: look at the render before you keep the file."))
+    "shrink any SVG. Every path must be absolute. Both tools return sizes, "
+    "error scores and one image with three panels: the input, the render of "
+    "the output, and their difference. Look at it before you keep the file."))
 
 MODES = {"trace": png2svg.trace, "vtrace": png2svg.vtrace, "exact": png2svg.pixel_copy}
-PREVIEW_PX = 800    # longest side of the preview; more pixels cost tokens, not insight
+PANEL_PX = 512      # longest side of one panel; three in a row fit the 1568 px a model keeps
+GAP = 8
+DIFF_GAIN = 4       # difference panel: white is an error of 64 or more
 
 
 def _say_why(fn):
@@ -47,6 +51,41 @@ def _abs(p, name):
     return p
 
 
+def _on_white(path):
+    im = PILImage.open(path).convert("RGBA")
+    return PILImage.alpha_composite(PILImage.new("RGBA", im.size, "white"), im).convert("RGB")
+
+
+def _panels(ref, render):
+    """One image, left to right: the reference, the render, and their difference
+    (black = equal, brighter = larger error). An agent that got the file by path
+    never saw the reference, and two panels alone hide a lost thin line."""
+    a, b = _on_white(ref), _on_white(render)    # compare() renders at the reference's size
+    d = functools.reduce(ImageChops.lighter, ImageChops.difference(a, b).split())
+    d = d.point(lambda v: min(255, v * DIFF_GAIN)).convert("RGB")
+    k = PANEL_PX / max(a.size)
+    w, h = (max(1, round(s * k)) for s in a.size)
+    how = PILImage.NEAREST if k > 1 else PILImage.LANCZOS   # keep an icon's pixels sharp
+    # ponytail: a downscale dims 1 px errors; MaxFilter on d before the resize if they vanish
+    strip = PILImage.new("RGB", (3 * w + 2 * GAP, h), "gray")
+    for i, im in enumerate((a, b, d)):
+        strip.paste(im.resize((w, h), how), (i * (w + GAP), 0))
+    buf = io.BytesIO()
+    strip.save(buf, "PNG")
+    return Image(data=buf.getvalue(), format="png")
+
+
+def _scored(res, compare, ref, out, preview):
+    """Add the error scores of `out` against `ref` to `res`, and the panels."""
+    try:
+        score = compare(ref, out)
+    except ImportError:
+        return [res, "install cairosvg to get the error scores and the preview"]
+    ref, render = score.pop("ref"), score.pop("render")
+    res.update({k: round(float(v), 3) for k, v in score.items()})
+    return [res, _panels(ref, render)] if preview else res
+
+
 @mcp.tool()
 @_say_why
 def png_to_svg(ctx: Context, png_path: str, svg_path: str = "",
@@ -59,9 +98,12 @@ def png_to_svg(ctx: Context, png_path: str, svg_path: str = "",
     no error, no curves, large files.
 
     svg_path defaults to the PNG's path with a .svg extension; it overwrites.
-    Scores are per-pixel colour error on a 0-255 scale: mean and max (lower is
-    better), over40 (% of pixels off by more than 40) and within8 (% within 8).
-    preview=True also returns a PNG render of the SVG.
+    Returns png_bytes and svg_bytes, and the per-pixel colour error on a 0-255
+    scale: mean and max (lower is better), over40 (% of pixels off by more than
+    40) and within8 (% within 8).
+    preview=True also returns one image with three panels, left to right: the
+    PNG, the render of the SVG, and their difference (black = equal, white = an
+    error of 64 or more).
     """
     src = _abs(png_path, "png_path")
     out = _abs(svg_path, "svg_path") if svg_path else os.path.splitext(src)[0] + ".svg"
@@ -73,25 +115,14 @@ def png_to_svg(ctx: Context, png_path: str, svg_path: str = "",
         anyio.from_thread.run(ctx.report_progress, step, None, msg)
 
     MODES[mode](src, out, say)
-    res = {"svg_path": out, "bytes": os.path.getsize(out)}
-    try:
-        score = png2svg.compare(src, out)
-    except ImportError:
-        return [res, "install cairosvg to get an error score and a preview"]
-    render = score.pop("render")
-    res.update({k: round(float(v), 3) for k, v in score.items()})
-    if not preview:
-        return res
-    im = PILImage.open(render)
-    im.thumbnail((PREVIEW_PX, PREVIEW_PX))
-    buf = io.BytesIO()
-    im.save(buf, "PNG")
-    return [res, Image(data=buf.getvalue(), format="png")]
+    res = {"svg_path": out, "png_bytes": os.path.getsize(src), "svg_bytes": os.path.getsize(out)}
+    return _scored(res, png2svg.compare, src, out, preview)
 
 
 @mcp.tool()
 @_say_why
-def compress_svg(svg_path: str, out_path: str = "", round_digits: int | None = None):
+def compress_svg(svg_path: str, out_path: str = "", round_digits: int | None = None,
+                 preview: bool = True):
     """Shrink any SVG (or .svgz) with scour.
 
     Lossless by default: it removes metadata, comments and whitespace, and
@@ -100,19 +131,20 @@ def compress_svg(svg_path: str, out_path: str = "", round_digits: int | None = N
     and desc, a few points smaller again.
 
     out_path defaults to <name>.min.svg. An out_path that ends in .svgz writes
-    gzipped bytes, ~60% smaller. mean_error is the render difference on a 0-255
-    scale: 0 means no visible change.
+    gzipped bytes, ~60% smaller. Returns bytes_before, bytes_after, saved_pct
+    and the render difference on a 0-255 scale: mean and max (0 means no
+    visible change), over40 (% of pixels off by more than 40) and within8 (%
+    within 8).
+    preview=True also returns one image with three panels, left to right: the
+    render before, the render after, and their difference (black = equal,
+    white = an error of 64 or more).
     """
     src = _abs(svg_path, "svg_path")
     out = _abs(out_path, "out_path") if out_path else os.path.splitext(src)[0] + ".min.svg"
     before, after = png2svg.compress(src, out, round_digits, gz=out.lower().endswith(".svgz"))
     res = {"out_path": out, "bytes_before": before, "bytes_after": after,
            "saved_pct": round(100 * (1 - after / before), 1)}
-    try:
-        res["mean_error"] = round(float(png2svg.compare_svg(src, out)["mean"]), 4)
-    except ImportError:
-        pass                                    # ponytail: no cairosvg, no score
-    return res
+    return _scored(res, png2svg.compare_svg, src, out, preview)
 
 
 if __name__ == "__main__":
